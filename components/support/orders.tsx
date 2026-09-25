@@ -51,9 +51,11 @@ export function Orders() {
   async function persist(order: WorkOrder) {
     setBusy(true);
     try {
-      await save('orders', order);
+      const { email } = await save('orders', order);
       setDraft(null);
-      toast.success('Orden guardada');
+      if (!email) toast.success('Orden guardada');
+      else if (email.status === 'sent') toast.success(`Orden creada correctamente. ${email.message}`, { duration: 6000 });
+      else toast(`Orden creada correctamente. ${email.message}`, { icon: '⚠️', duration: 10000 });
     } catch (error) {
       toast.error((error as Error).message);
     } finally { setBusy(false); }

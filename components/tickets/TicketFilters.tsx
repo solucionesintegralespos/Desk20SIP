@@ -1,7 +1,8 @@
 'use client'
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { rememberTicketsQuery } from '@/lib/tickets-list-query'
 import { Filter, Search } from 'lucide-react'
 
 interface TicketFiltersProps {
@@ -33,6 +34,12 @@ export default function TicketFilters({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const query = searchParams.toString()
+
+  // The URL is the source of truth: remember it for links back to the list and
+  // keep the search box in step with back/forward navigation.
+  useEffect(() => { rememberTicketsQuery(query) }, [query])
+  useEffect(() => { setSearchTerm(currentSearch || '') }, [currentSearch])
 
   const updateFilter = (key: string, value: string) => {
     const params = new URLSearchParams()

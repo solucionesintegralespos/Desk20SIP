@@ -36,6 +36,7 @@ interface TicketSidebarProps {
     } | null
     tags: string[]
   }
+  creator?: { id: string; name: string | null; email: string | null } | null
   interactions: Array<{
     id: string
     type: InteractionType
@@ -67,7 +68,7 @@ const interactionIcons = {
   RECEIPT: FileText,
 }
 
-export default function TicketSidebar({ ticket, interactions }: TicketSidebarProps) {
+export default function TicketSidebar({ ticket, creator, interactions }: TicketSidebarProps) {
   const router = useRouter()
   const [categories, setCategories] = useState<Category[]>([])
   const [isEditing, setIsEditing] = useState(false)
@@ -326,6 +327,26 @@ export default function TicketSidebar({ ticket, interactions }: TicketSidebarPro
           </div>
         ) : (
           <p className="text-sm text-gray-500">Sin asignar</p>
+        )}
+      </div>
+
+      {/* Creator */}
+      <div className="p-6 border-b">
+        <h3 className="text-sm font-semibold text-gray-900 uppercase mb-4">Creado por</h3>
+        {creator ? (
+          <div className="flex items-center space-x-3">
+            <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
+              <span className="text-primary-600 font-medium">
+                {creator.name?.[0] || (creator.email?.[0]?.toUpperCase() || "?")}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <p className="font-medium text-gray-900 truncate">{creator.name || creator.email}</p>
+              {creator.name && creator.email && <p className="text-sm text-gray-500 truncate">{creator.email}</p>}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">No registrado</p>
         )}
       </div>
 

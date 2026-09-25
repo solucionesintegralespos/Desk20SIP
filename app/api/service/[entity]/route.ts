@@ -5,6 +5,7 @@ import { createSeed } from '@/lib/support/seed';
 import { validateTemplate, validateChecklist, validateOrder, validText } from '@/lib/support/validation';
 import type { Template, ChecklistRun, WorkOrder } from '@/lib/support/model';
 import { orderCreator } from '@/lib/support/order-owner';
+import { sendOrderCreatedEmail } from '@/lib/order-email';
 type RecordData = (Template | ChecklistRun | WorkOrder) & {
     _revision?: number;
 };
@@ -158,9 +159,14 @@ export async function POST(request: Request, { params }: {
                 }
             }
             await tx.serviceAuditEvent.create({ data: { actorId: user.id, entityId: input.id, action: `${kind}:${'status' in payload && payload.status === 'completed' ? 'completed' : existing ? 'updated' : 'created'}` } });
-            return { id: input.id };
+            return { id: input.id, orderCreated: kind === 'orders' && !existing };
         });
-        return Response.json(result);
+        const { orderCreated, ...body } = result;
+        if (!orderCreated)
+            return Response.json(body);
+        // The order is already committed: an email failure is reported, never rolled back.
+        const email = await sendOrderCreatedEmail(body.id, user.id);
+        return Response.json({ ...body, email });
     }
     catch (error) {
         return serviceError(error);

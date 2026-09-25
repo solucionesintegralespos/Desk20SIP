@@ -6,6 +6,7 @@ import { ArrowLeft, Upload, X, File as FileIcon, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import TechnicianPicker from './TechnicianPicker'
 import { showTicketCreatedNotice } from './TicketCreatedNotice'
+import { useTicketsListHref } from '@/lib/tickets-list-query'
 
 interface Category {
   id: string
@@ -22,11 +23,13 @@ interface CreateTicketFormProps {
   currentUser: {
     id: string
     role: string
+    name?: string | null
   }
 }
 
 export default function CreateTicketForm({ currentUser }: CreateTicketFormProps) {
   const router = useRouter()
+  const ticketsListHref = useTicketsListHref()
   const [loading, setLoading] = useState(false)
   const [improvingText, setImprovingText] = useState(false)
   const [error, setError] = useState('')
@@ -235,7 +238,7 @@ export default function CreateTicketForm({ currentUser }: CreateTicketFormProps)
     <div className="bg-white rounded-lg shadow">
       <div className="p-6 border-b">
         <Link 
-          href="/dashboard/tickets"
+          href={ticketsListHref}
           className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-4"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -252,7 +255,7 @@ export default function CreateTicketForm({ currentUser }: CreateTicketFormProps)
 
         <div className="flex justify-end space-x-3 pb-4 border-b">
           <Link
-            href="/dashboard/tickets"
+            href={ticketsListHref}
             className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
           >
             Cancelar
@@ -264,6 +267,12 @@ export default function CreateTicketForm({ currentUser }: CreateTicketFormProps)
           >
             {loading ? 'Creando...' : 'Crear Ticket'}
           </button>
+        </div>
+
+        {/* The API records the session user as the creator. */}
+        <div>
+          <label htmlFor="ticket-creator" className="block text-sm font-medium text-gray-700 mb-2">Creado por</label>
+          <input id="ticket-creator" readOnly value={currentUser.name || 'Usuario actual'} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700 cursor-not-allowed" />
         </div>
 
         <div>

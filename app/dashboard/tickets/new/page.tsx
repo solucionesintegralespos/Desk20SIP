@@ -34,7 +34,7 @@ export default async function NewTicketPage() {
             <p className="text-gray-600 mt-1">Completa el formulario para crear un ticket de soporte</p>
           </div>
 
-          <CreateTicketForm currentUser={{ id: user.id, role: user.role }} />
+          <CreateTicketForm currentUser={{ id: user.id, role: user.role, name: user.name || user.email }} />
         </div>
       </div></>
   )

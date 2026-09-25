@@ -8,6 +8,7 @@ import { TicketStatus, TicketPriority } from '@prisma/client'
 import { ArrowLeft, User } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useTicketsListHref } from '@/lib/tickets-list-query'
 
 interface TicketHeaderProps {
   ticket: {
@@ -41,6 +42,7 @@ const priorityLabels = {
 
 export default function TicketHeader({ ticket }: TicketHeaderProps) {
   const router = useRouter()
+  const ticketsListHref = useTicketsListHref()
   const { data: session } = useSession()
   const [selected, setSelected] = useState<string[]>(ticket.assignments?.map(a => a.user.id) || (ticket.assignee ? [ticket.assignee.id] : []))
   useEffect(() => { setSelected(ticket.assignments?.map(a => a.user.id) || (ticket.assignee ? [ticket.assignee.id] : [])) }, [ticket])
@@ -104,7 +106,8 @@ export default function TicketHeader({ ticket }: TicketHeaderProps) {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-start md:items-center space-x-4">
           <Link 
-            href="/dashboard"
+            href={ticketsListHref}
+            aria-label="Volver a tickets"
             className="text-gray-400 hover:text-gray-600 mt-1 md:mt-0"
           >
             <ArrowLeft className="h-5 w-5" />

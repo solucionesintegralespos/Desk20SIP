@@ -1,29 +1,41 @@
 'use client';
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { Moon, Sun } from 'lucide-react';
 
 type Theme = 'light' | 'dark';
-const ThemeContext = createContext<{ theme: Theme; toggle: () => void; saving: boolean; error: string } | null>(null);
-export function ThemeProvider({ initialTheme, children }: { initialTheme: Theme; children: ReactNode }) {
-  const [theme, setTheme] = useState(initialTheme);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  async function toggle() {
-    if (saving) return;
+// Device preference: each browser keeps its own choice and it is never sent to the server.
+const STORAGE_KEY = 'sip-theme';
+// Runs while the HTML is parsed, before the workspace paints, so a stored dark theme never flashes light.
+const applyStoredTheme = `(function(){try{var t=localStorage.getItem('${STORAGE_KEY}');if(t==='dark'||t==='light')document.currentScript.parentElement.setAttribute('data-theme',t)}catch(e){}})()`;
+const useClientLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+function storedTheme(): Theme | null {
+  try { const value = localStorage.getItem(STORAGE_KEY); return value === 'dark' || value === 'light' ? value : null; }
+  catch { return null; }
+}
+const ThemeContext = createContext<{ theme: Theme; toggle: () => void } | null>(null);
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  // The server cannot read the device preference: render light, then adopt the stored value before paint.
+  const [theme, setTheme] = useState<Theme>('light');
+  useClientLayoutEffect(() => {
+    const stored = storedTheme();
+    if (stored) setTheme(stored);
+  }, []);
+  useEffect(() => {
+    const sync = (event: StorageEvent) => { if (event.key === STORAGE_KEY) setTheme(event.newValue === 'dark' ? 'dark' : 'light'); };
+    window.addEventListener('storage', sync);
+    return () => window.removeEventListener('storage', sync);
+  }, []);
+  function toggle() {
     const next = theme === 'light' ? 'dark' : 'light';
-    setSaving(true); setError(''); setTheme(next);
-    try {
-      const response = await fetch('/api/preferences/theme', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: next }) });
-      if (!response.ok) throw Error('No se pudo guardar el tema. Intenta nuevamente.');
-    } catch (error) { setTheme(theme); setError((error as Error).message); }
-    finally { setSaving(false); }
+    setTheme(next);
+    try { localStorage.setItem(STORAGE_KEY, next); } catch { /* Storage disabled: the choice lasts for this page only. */ }
   }
-  return <ThemeContext.Provider value={{ theme, toggle, saving, error }}><div data-theme={theme} className="h-full">{children}</div></ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ theme, toggle }}><div data-theme={theme} className="h-full" suppressHydrationWarning><script dangerouslySetInnerHTML={{ __html: applyStoredTheme }} />{children}</div></ThemeContext.Provider>;
 }
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const context = useContext(ThemeContext);
   if (!context) return null;
-  const { theme, toggle, saving, error } = context;
-  if (compact) return <div><button type="button" onClick={toggle} disabled={saving} aria-pressed={theme === 'dark'} aria-label="Tema oscuro" title={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'} className="p-3 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary-500">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button>{error && <span role="alert" title={error} className="block text-center text-red-600 text-xs">Error<span className="sr-only">: {error}</span></span>}</div>;
-  return <div><button type="button" onClick={toggle} disabled={saving} aria-pressed={theme === 'dark'} aria-label="Tema oscuro" className="flex items-center gap-3 px-4 py-3 rounded-lg w-full text-primary-100 hover:bg-white/10 disabled:opacity-50">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}<span>{saving ? 'Guardando tema…' : theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}</span></button>{error && <p role="alert" className="px-4 text-sm text-red-200">{error}</p>}</div>;
+  const { theme, toggle } = context;
+  if (compact) return <div><button type="button" onClick={toggle} aria-pressed={theme === 'dark'} aria-label="Tema oscuro" title={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'} className="p-3 rounded-lg text-gray-600 hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-primary-500">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button></div>;
+  return <div><button type="button" onClick={toggle} aria-pressed={theme === 'dark'} aria-label="Tema oscuro" className="flex items-center gap-3 px-4 py-3 rounded-lg w-full text-primary-100 hover:bg-white/10">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}<span>{theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}</span></button></div>;
 }

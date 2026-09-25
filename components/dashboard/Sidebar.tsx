@@ -23,6 +23,8 @@ import {
 } from 'lucide-react'
 import { useOrg } from '@/components/OrgProvider'
 import { ThemeToggle } from '@/components/ThemeProvider'
+import { TICKETS_PATH, useTicketsListHref } from '@/lib/tickets-list-query'
+import { NotificationToggle } from '@/components/reminders/TaskReminders'
 
 interface SidebarProps {
   user?: {
@@ -39,6 +41,9 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
   const { orgName, orgLogo } = useOrg()
   const pathname = usePathname()
   const userRole = user?.role || 'CUSTOMER'
+  // The tickets entry returns to the list with its last filters.
+  const ticketsListHref = useTicketsListHref()
+  const linkHref = (href: string) => href === TICKETS_PATH ? ticketsListHref : href
 
 
   // Definir navegación según el rol
@@ -69,7 +74,7 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
           {navigation.map(item => {
             const Icon = item.icon
             const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
-            return <Link key={item.href} href={item.href} title={item.name} aria-label={item.name} aria-current={active ? 'page' : undefined}
+            return <Link key={item.href} href={linkHref(item.href)} title={item.name} aria-label={item.name} aria-current={active ? 'page' : undefined}
               className={`relative flex items-center justify-center h-11 rounded-lg border-l-2 focus-visible:ring-2 focus-visible:ring-primary-500 ${active ? 'bg-primary-100 text-primary-600 border-primary-600' : 'text-gray-600 hover:bg-gray-100 border-transparent'}`}>
               <Icon className="h-5 w-5" />
               {item.href === '/dashboard/tickets' && !!openTicketsCount && <span aria-label={`${openTicketsCount} tickets abiertos`} className="absolute top-1 right-0 min-w-4 px-0.5 rounded-full bg-red-600 text-white text-[9px] text-center">{openTicketsCount > 99 ? '99+' : openTicketsCount}</span>}
@@ -78,6 +83,7 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
         </nav>
         <div className="border-t mt-2 pt-2 flex flex-col items-center gap-1">
           <ThemeToggle compact />
+          <NotificationToggle compact />
           <Link href="/dashboard/profile" title="Mi perfil" aria-label="Mi perfil" aria-current={pathname === '/dashboard/profile' ? 'page' : undefined} className={`p-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary-500 ${pathname === '/dashboard/profile' ? 'bg-primary-100 text-primary-600' : 'text-gray-600 hover:bg-gray-100'}`}><UserCircle className="h-5 w-5" /></Link>
           <button type="button" onClick={() => signOut()} title="Cerrar sesión" aria-label="Cerrar sesión" className="p-3 rounded-lg text-gray-600 hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-primary-500"><LogOut className="h-5 w-5" /></button>
         </div>
@@ -157,7 +163,7 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
             return (
               <Link
                 key={item.name}
-                href={item.href}
+                href={linkHref(item.href)}
                 onClick={() => setIsOpen(false)}
                 className={`flex items-center justify-between px-4 py-3 rounded-lg border-l-4 transition ${
                   isActive
@@ -181,6 +187,7 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
 
         <div className="p-4 border-t border-white/10">
           <ThemeToggle />
+          <NotificationToggle />
           <div className="mb-4 px-4">
             <p className="text-sm font-medium text-white truncate">{user?.name}</p>
             <p className="text-xs text-primary-200 truncate">{user?.email}</p>

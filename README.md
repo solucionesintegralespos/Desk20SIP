@@ -48,6 +48,35 @@ firma y aceptación. Al confirmar una orden vinculada a un ticket abierto o pend
 pasa a Cerrado en la misma transacción y se registra el cierre en su historial.
 Los checklists no admiten nuevos adjuntos ni exigen evidencias; los archivos antiguos se conservan para consulta.
 
+Al crear una orden de servicio se envía automáticamente un correo HTML al cliente de la orden
+con el PDF adjunto (logo, datos del cliente, servicio, técnico, fechas en hora de Colombia,
+trabajo realizado, observaciones y firma). El botón «Ver orden de servicio» abre el PDF mediante un
+enlace firmado que vence a los 90 días, porque los clientes no acceden al panel. El envío ocurre
+después de guardar la orden: si el correo falla, la orden permanece creada y el usuario ve un aviso.
+Se omite si el cliente no tiene un correo válido o desactivó las notificaciones. Cada resultado queda
+en un registro `order-email:<id de la orden>` (`pending`, `sent`, `failed`, `skipped`) con destinatario,
+fecha y error, en el historial de auditoría (`orders:email-sent`, `orders:email-failed`…) y en el log del
+servidor con el prefijo `[ORDER_EMAIL]`. Usa la configuración SMTP de `.env` (`SMTP_HOST`, `SMTP_PORT`,
+`SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`; opcionales `SMTP_SECURE` y `APP_PUBLIC_URL`, que debe ser una
+URL accesible para los clientes; si falta se usa `NEXTAUTH_URL`). El logo proviene de Configuración
+cuando es un archivo PNG/JPG local de hasta 512 KB; si no hay logo configurado se usa
+`public/brand/sip-logo-mail.png`. No requiere migración.
+Validación: `npm run test:order-email` (sin base de datos ni servidor SMTP reales).
+
+El tema claro/oscuro es una preferencia de cada navegador: se guarda en `localStorage` (`sip-theme`)
+y no se envía al servidor, así que cada dispositivo conserva su elección. Se aplica antes de pintar
+la página para evitar parpadeos, y se sincroniza entre pestañas del mismo navegador.
+
+Recordatorios de tareas: mientras el personal usa la aplicación, cada tarea «Programada» de su
+Programación muestra un aviso al llegar su hora (fecha y hora de Colombia, sin importar la zona
+horaria del dispositivo), con «Ver tarea» y «Posponer» (10 minutos). También avisa de las tareas de
+hoy cuya hora ya pasó. La aplicación consulta las tareas de hoy y mañana cada 5 minutos, al volver a la
+pestaña y al guardar la programación, y compara la hora localmente cada 15 segundos. Cada tarea avisa una
+vez por navegador (también tras recargar); si se reprograma, avisa a la nueva hora. Con «Activar
+notificaciones» del menú lateral el navegador pide permiso y muestra además notificaciones del
+sistema cuando la ventana no está enfocada; requieren HTTPS o `localhost`, y sin permiso los avisos se
+muestran dentro de la aplicación. Validación: `npm run test:reminders`.
+
 Después de actualizar: `npm run prisma:push` y `npm run service:seed`.
 La importación de plantillas conserva los cambios que ya existan en SIP SOPORTE.
 Para validar reglas y persistencia en PostgreSQL: `npm run test:service`.

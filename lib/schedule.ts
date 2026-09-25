@@ -16,3 +16,11 @@ export const eventSchema = z.object({
 export type ScheduleEvent = z.infer<typeof eventSchema> & { id: string; revision: number };
 export type SchedulePerson = { id: string; name: string | null; email: string | null; avatar?: string | null };
 export const statusLabels = { planned: 'Programado', in_progress: 'En proceso', completed: 'Completado', vacation: 'Vacaciones', available: 'Disponible' };
+
+// Events store Bogotá wall-clock dates and times. Colombia has no daylight saving
+// time, so the instant is always UTC-5 regardless of the device time zone.
+export const scheduledAt = (date: string, start: string) => new Date(`${date}T${start}:00-05:00`);
+export const timeLabel = (time: string) => {
+  const [hour, minute] = time.split(':');
+  return `${Number(hour) % 12 || 12}:${minute} ${Number(hour) < 12 ? 'AM' : 'PM'}`;
+};

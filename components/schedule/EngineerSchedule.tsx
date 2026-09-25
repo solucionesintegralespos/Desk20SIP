@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
 import { Button, Input, Textarea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/support/ui';
 import { Field } from '@/components/support/fields';
@@ -8,7 +9,8 @@ import { Avatar } from '@/components/ui/Avatar';
 import { searchText } from '@/components/support/SearchFilter';
 import { colombiaHolidays } from '@/lib/colombia-holidays';
 import { serviceDay } from '@/lib/support/order-display';
-import { eventSchema, statusLabels, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
+import { eventSchema, statusLabels, timeLabel, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
+import { SCHEDULE_CHANGED } from '@/components/reminders/TaskReminders';
 
 type Data = { events: ScheduleEvent[]; engineers: SchedulePerson[]; clients: SchedulePerson[] };
 type Draft = Omit<ScheduleEvent, 'id' | 'revision'> & { id?: string; revision?: number };
@@ -24,10 +26,6 @@ function monday(value: string) {
   return addDays(value, -(day === 0 ? 6 : day - 1));
 }
 const dateLabel = (date: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('es-CO', { ...options, timeZone: 'UTC' }).format(new Date(date + 'T12:00:00Z'));
-const timeLabel = (time: string) => {
-  const [hour, minute] = time.split(':');
-  return `${Number(hour) % 12 || 12}:${minute} ${Number(hour) < 12 ? 'AM' : 'PM'}`;
-};
 
 export default function EngineerSchedule() {
   const [data, setData] = useState<Data>({ events: [], engineers: [], clients: [] });
@@ -53,6 +51,21 @@ export default function EngineerSchedule() {
     finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
+  // Task reminders link here with ?event=<id>: show its week and open it once loaded.
+  const router = useRouter();
+  const requestedEvent = useSearchParams().get('event');
+  const openedEvent = useRef<string | null>(null);
+  useEffect(() => {
+    if (!requestedEvent) { openedEvent.current = null; return; }
+    if (loading || openedEvent.current === requestedEvent) return;
+    const event = data.events.find(item => item.id === requestedEvent);
+    if (!event) return;
+    openedEvent.current = requestedEvent;
+    setEngineer(''); setStatus(''); setQuery('');
+    if (new Date(event.date + 'T12:00:00Z').getUTCDay() % 6 === 0) setWeekend(true);
+    setWeek(monday(event.date)); setFormError(''); setDeleting(false); setDraft({ ...event });
+    router.replace('/dashboard/schedule', { scroll: false });
+  }, [loading, requestedEvent, data.events, router]);
   const days = Array.from({ length: weekend ? 7 : 5 }, (_, index) => addDays(week, index));
   const holidays = new Map(Array.from(new Set(days.map(day => Number(day.slice(0, 4))))).flatMap(year => Array.from(colombiaHolidays(year))));
   const clients = new Map(data.clients.map(client => [client.id, client]));
@@ -75,6 +88,7 @@ export default function EngineerSchedule() {
       const result = await response.json();
       if (!response.ok) throw Error(result.error || 'No se pudo guardar');
       setDraft(null); await load();
+      window.dispatchEvent(new Event(SCHEDULE_CHANGED));
     } catch (error) { setFormError((error as Error).message); }
     finally { setBusy(false); }
   }

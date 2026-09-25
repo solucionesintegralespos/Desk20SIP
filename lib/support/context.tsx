@@ -5,6 +5,10 @@ import type { State, User } from './model';
 import { usePathname } from 'next/navigation';
 import { clientId } from './client-id';
 type Collection = 'orders' | 'checklists' | 'templates';
+export interface SaveResult {
+    id: string;
+    email?: { status: 'pending' | 'sent' | 'failed' | 'skipped'; recipient: string | null; message: string };
+}
 interface AppContext {
     state: State;
     user: User;
@@ -12,7 +16,7 @@ interface AppContext {
     dateTo: string;
     setDates: (from: string, to: string) => void;
     loading: boolean;
-    save: <K extends Collection>(collection: K, record: State[K][number]) => Promise<void>;
+    save: <K extends Collection>(collection: K, record: State[K][number]) => Promise<SaveResult>;
     detail: <K extends Collection>(collection: K, id: string) => Promise<State[K][number]>;
 }
 const Context = createContext<AppContext>(null!);
@@ -56,8 +60,8 @@ export function SupportProvider({ children }: {
         if (!response.ok) throw Error(result.error);
         return result;
     }
-    async function save<K extends Collection>(collection: K, record: State[K][number]) { const response = await fetch(`/api/service/${collection}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) }); const result = await response.json(); if (!response.ok)
-        throw Error(result.error); await refresh(); }
+    async function save<K extends Collection>(collection: K, record: State[K][number]): Promise<SaveResult> { const response = await fetch(`/api/service/${collection}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) }); const result = await response.json(); if (!response.ok)
+        throw Error(result.error); await refresh(); return result; }
     if (error)
         return <p role="alert" className="p-6 text-red-600">{error} <button onClick={() => { setError(''); refresh().catch(e => setError(e.message)); }}>Reintentar</button></p>;
     if (!data)

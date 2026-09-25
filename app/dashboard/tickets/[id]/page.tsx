@@ -94,6 +94,11 @@ export default async function TicketDetailPage({
     redirect('/dashboard')
   }
 
+  // enteredById has no relation; tickets created before it was recorded have no creator.
+  const creator = ticket.enteredById
+    ? await prisma.user.findUnique({ where: { id: ticket.enteredById }, select: { id: true, name: true, email: true } })
+    : null
+
   // Filtrar contador según el rol
   const countWhere = user.role === 'CUSTOMER' 
     ? { status: 'OPEN' as const, customerId: user.id }
@@ -126,6 +131,7 @@ export default async function TicketDetailPage({
         {/* Right sidebar */}
         <TicketSidebar 
           ticket={ticket}
+          creator={creator}
           interactions={ticket.interactions}
         />
       </div></>
