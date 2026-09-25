@@ -121,17 +121,17 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
         md:relative md:translate-x-0
         ${desktopCollapsed ? 'md:hidden' : ''}
       `}>
-        <div className="p-6 border-b border-white/10 hidden md:block">
-          <button type="button" onClick={() => setDesktopCollapsed(true)} aria-label="Ocultar barra lateral" title="Ocultar barra lateral" aria-expanded={true} aria-controls="dashboard-sidebar" className="flex items-center gap-2 text-xs text-primary-100 hover:bg-white/10 rounded-lg p-2 mb-3 focus-visible:ring-2 focus-visible:ring-white">
+        <div className="px-4 py-3 border-b border-white/10 hidden md:block">
+          <button type="button" onClick={() => setDesktopCollapsed(true)} aria-label="Ocultar barra lateral" title="Ocultar barra lateral" aria-expanded={true} aria-controls="dashboard-sidebar" className="flex items-center gap-2 text-xs text-primary-100 hover:bg-white/10 rounded-lg px-2 py-1.5 mb-2 -ml-2 focus-visible:ring-2 focus-visible:ring-white">
             <Menu className="h-4 w-4" /> Ocultar menú
           </button>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2 min-w-0">
             {orgLogo ? (
-              <Image width={112} height={112} sizes="(max-width: 768px) 40px, 56px" src={orgLogo} alt={orgName} className="h-14 w-14 rounded-lg object-contain shrink-0" />
+              <Image width={80} height={80} sizes="40px" src={orgLogo} alt={orgName} className="h-10 w-10 rounded-lg object-contain shrink-0" />
             ) : (
-              <Headphones className="h-8 w-8 text-brand-amber" />
+              <Headphones className="h-7 w-7 shrink-0 text-brand-amber" />
             )}
-            <span className="text-lg font-bold text-white">{orgName}</span>
+            <span className="text-base font-bold text-white truncate">{orgName}</span>
           </div>
         </div>
 
@@ -153,8 +153,8 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
           </button>
         </div>
 
-        <div className="brand-stripe mx-6 mt-4 rounded-full shrink-0" aria-hidden="true" />
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        <div className="brand-stripe mx-4 mt-3 rounded-full shrink-0" aria-hidden="true" />
+        <nav className="flex-1 min-h-0 px-3 py-3 space-y-0.5 overflow-y-auto">
           {navigation.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"))
@@ -165,18 +165,18 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
                 key={item.name}
                 href={linkHref(item.href)}
                 onClick={() => setIsOpen(false)}
-                className={`flex items-center justify-between px-4 py-3 rounded-lg border-l-4 transition ${
+                className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border-l-4 text-sm transition ${
                   isActive
                     ? 'bg-white/10 text-white border-brand-amber'
                     : 'text-primary-100 hover:bg-white/10 border-transparent'
                 }`}
               >
-                <div className="flex items-center space-x-3">
-                  <Icon className="h-5 w-5" />
-                  <span className="font-medium">{item.name}</span>
+                <div className="flex items-center gap-3 min-w-0">
+                  <Icon className="h-[18px] w-[18px] shrink-0" />
+                  <span className="font-medium truncate">{item.name}</span>
                 </div>
                 {isTickets && openTicketsCount !== undefined && openTicketsCount > 0 && (
-                  <span className="inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none bg-brand-coral text-primary-950 rounded-full">
+                  <span className="inline-flex shrink-0 items-center justify-center min-w-5 px-1.5 py-0.5 text-[11px] font-bold leading-none bg-brand-coral text-primary-950 rounded-full">
                     {openTicketsCount}
                   </span>
                 )}
@@ -185,31 +185,33 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
           })}
         </nav>
 
-        <div className="p-4 border-t border-white/10">
+        <div className="shrink-0 px-3 py-3 border-t border-white/10 space-y-0.5">
           <ThemeToggle />
           <NotificationToggle />
-          <div className="mb-4 px-4">
-            <p className="text-sm font-medium text-white truncate">{user?.name}</p>
-            <p className="text-xs text-primary-200 truncate">{user?.email}</p>
-          </div>
+          <div className="my-2 border-t border-white/10" aria-hidden="true" />
           <Link
             href="/dashboard/profile"
             onClick={() => setIsOpen(false)}
-            className={`flex items-center space-x-3 px-4 py-3 rounded-lg border-l-4 transition w-full mb-2 ${
+            title="Mi perfil"
+            className={`flex items-center gap-3 px-3 py-2 rounded-lg border-l-4 transition w-full ${
               pathname === '/dashboard/profile'
                 ? 'bg-white/10 text-white border-brand-amber'
                 : 'text-primary-100 hover:bg-white/10 border-transparent'
             }`}
           >
-            <UserCircle className="h-5 w-5" />
-            <span className="font-medium">Mi Perfil</span>
+            <UserCircle className="h-8 w-8 shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-white truncate">{user?.name || 'Mi perfil'}</span>
+              <span className="block text-xs text-primary-200 truncate">{user?.email}</span>
+            </span>
           </Link>
           <button
+            type="button"
             onClick={() => signOut()}
-            className="flex items-center space-x-3 px-4 py-3 rounded-lg text-primary-100 hover:bg-white/10 border-transparent transition w-full"
+            className="flex items-center gap-3 w-full px-3 py-2 rounded-lg border-l-4 border-transparent text-sm font-medium text-left text-primary-100 hover:bg-white/10 transition focus-visible:ring-2 focus-visible:ring-white"
           >
-            <LogOut className="h-5 w-5" />
-            <span className="font-medium">Cerrar Sesión</span>
+            <LogOut className="h-[18px] w-[18px] shrink-0" />
+            <span>Cerrar sesión</span>
           </button>
         </div>
       </div>
