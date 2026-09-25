@@ -1,0 +1,223 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  domain    String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  users     User[]
+  tickets   Ticket[]
+}
+
+enum UserRole {
+  ADMIN
+  AGENT
+  CUSTOMER
+}
+
+model User {
+  id                 String       @id @default(cuid())
+  email              String?      @unique
+  name               String?
+  password           String?
+  avatar             String?
+  // Monthly targets; legacy column names retained to preserve configured values.
+  dailyEntryGoal     Int?
+  dailyClosureGoal   Int?
+  role               UserRole     @default(CUSTOMER)
+  phone              String?
+  location           String?
+  address            String?
+  publicToken        String?      @unique
+  emailNotifications Boolean      @default(true)
+  twoFactorEnabled   Boolean      @default(false)
+  twoFactorSecret    String?
+  organizationId     String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  
+  organization      Organization?  @relation(fields: [organizationId], references: [id])
+  assignedTickets   Ticket[]       @relation("AssignedTickets")
+  ticketAssignments TicketAssignee[]
+  createdTickets    Ticket[]       @relation("CreatedTickets")
+  messages          Message[]
+  interactions      Interaction[]
+  serviceClients    ServiceRecord[] @relation("ServiceClient")
+  serviceAssigned   ServiceRecord[] @relation("ServiceTechnician")
+  @@index([role])
+}
+
+enum TicketStatus {
+  OPEN
+  PENDING
+  SOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketType {
+  INCIDENT
+  CHANGE_REQUEST
+  PROJECT
+}
+
+model Ticket {
+  id             String         @id @default(cuid())
+  number         Int            @unique @default(autoincrement())
+  subject        String
+  description    String?
+  status         TicketStatus   @default(OPEN)
+  priority       TicketPriority @default(NORMAL)
+  type           TicketType?
+  hours          Float?
+  tags           String[]
+  attachments    String[]
+  customerId     String
+  assigneeId     String?
+  categoryId     String?
+  organizationId String?
+  enteredById    String?
+  closedById     String?
+  closedAt       DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  customer       User           @relation("CreatedTickets", fields: [customerId], references: [id])
+  assignee       User?          @relation("AssignedTickets", fields: [assigneeId], references: [id])
+  category       Category?      @relation(fields: [categoryId], references: [id])
+  organization   Organization?  @relation(fields: [organizationId], references: [id])
+  messages       Message[]
+  assignments    TicketAssignee[]
+  interactions   Interaction[]
+  @@index([status, updatedAt])
+  @@index([customerId, status, updatedAt])
+  @@index([assigneeId])
+  @@index([enteredById, createdAt])
+  @@index([closedById, closedAt])
+}
+
+model TicketAssignee {
+  ticketId String
+  userId   String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user     User   @relation(fields: [userId], references: [id], onUpdate: NoAction)
+
+  @@id([ticketId, userId])
+  @@index([userId])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tickets   Ticket[]
+}
+
+enum MessageType {
+  COMMENT
+  NOTE
+  EMAIL
+  WHATSAPP
+  SYSTEM
+}
+
+model Message {
+  id         String      @id @default(cuid())
+  content    String
+  type       MessageType @default(COMMENT)
+  isInternal Boolean     @default(false)
+  ticketId   String
+  authorId   String
+  attachments String[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  
+  ticket     Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author     User        @relation(fields: [authorId], references: [id])
+  @@index([ticketId])
+}
+
+enum InteractionType {
+  CONVERSATION
+  EMAIL_CHANGE
+  ORDER
+  ARTICLE_VIEW
+  RECEIPT
+}
+
+model Interaction {
+  id          String          @id @default(cuid())
+  type        InteractionType
+  title       String
+  description String?
+  metadata    Json?
+  userId      String
+  ticketId    String?
+  createdAt   DateTime        @default(now())
+  
+  user        User            @relation(fields: [userId], references: [id])
+  ticket      Ticket?         @relation(fields: [ticketId], references: [id])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Payload preserves template versions, response snapshots and signed documents.
+model ServiceRecord {
+  id          String   @id
+  kind        String
+  clientId    String?
+  techId      String?
+  revision    Int      @default(1)
+  orderNumber Int?     @unique
+  previousNumber String?
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  client      User?    @relation("ServiceClient", fields: [clientId], references: [id])
+  technician  User?    @relation("ServiceTechnician", fields: [techId], references: [id])
+
+  @@index([kind, techId])
+  @@index([kind, updatedAt])
+  @@index([clientId])
+}
+
+model ServiceCounter {
+  key   String @id
+  value Int
+}
+
+model ServiceAuditEvent {
+  id        String   @id @default(cuid())
+  actorId   String
+  entityId  String
+  action    String
+  createdAt DateTime @default(now())
+  @@index([entityId])
+}

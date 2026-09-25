@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), ts = require('typescript');
+require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
+const { incentiveCsv } = require('../lib/incentive-export.ts');
+const plan = { month: '2026-09', leaderName: 'Mesa de Ayuda', indicators: [{ id: 'one', group: 'FE', name: '=HYPERLINK("x")', target: 80, amount: 25000, direction: 'at_least', confirmed: true, note: 'Texto; con "comillas"\ny salto' }] };
+const results = { calculatedAt: '2026-09-24T18:00:00Z', total: 25000, rows: [{ id: 'one', numerator: 4, denominator: 5, percentage: 80, status: 'met', payout: 25000 }] };
+const csv = incentiveCsv(plan, results, 'Responsable');
+assert.ok(csv.startsWith('\uFEFFsep=;\r\n'));
+assert.ok(csv.includes('"\'=HYPERLINK(""x"")"'));
+assert.ok(csv.includes('"Texto; con ""comillas""\ny salto"'));
+assert.ok(csv.includes('"Estimado provisional"'));
+assert.ok(csv.includes('"TOTAL A LIQUIDAR (COP)";"";"";"";"";"";"";"";25000'));
+assert.ok(incentiveCsv({ ...plan, closedAt: '2026-10-01', closedBy: 'Admin' }, results, 'Responsable').includes('"Cerrada"'));
+assert.ok(incentiveCsv(plan, { ...results, rows: [] }, 'Responsable').includes('"Pendiente"'));
+console.log('PASS: CSV encoding, delimiter, escaping, formula injection protection, totals and liquidation state');

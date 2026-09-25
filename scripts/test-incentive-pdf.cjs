@@ -1,0 +1,23 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), ts = require('typescript');
+require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename);
+const { incentivePdf } = require('../lib/incentive-pdf.ts');
+const { initialPlan, calculatePlan } = require('../lib/incentives.ts');
+(async () => {
+ const plan = initialPlan('2026-09', 'helpdesk', ['test'], []);
+ const pairs = [[281,356],[205,205],[356,329],[1,3],[3,10],[1,114],[21,22],[4,93],[243,291],[1,4],[291,386],[3,3],[2,5],[141,200]];
+ plan.indicators = plan.indicators.map((i, n) => ({ ...i, source: 'manual', numerator: pairs[n][0], denominator: pairs[n][1], confirmed: true, note: '' }));
+ const results = calculatePlan(plan, []);
+ assert.equal(results.total, 224999);
+ const pdf = await incentivePdf(plan, results, 'Responsable de prueba');
+ assert.ok(pdf.getNumberOfPages() >= 1);
+ const output = Buffer.from(pdf.output('arraybuffer'));
+ assert.equal(output.subarray(0, 5).toString(), '%PDF-');
+ assert.ok(pdf.output().includes('224.999'));
+ fs.mkdirSync('tmp/pdfs', { recursive: true });
+ fs.writeFileSync('tmp/pdfs/incentives-preview.pdf', output);
+ const longPlan = { ...plan, indicators: Array.from({ length: 70 }, (_, n) => ({ ...plan.indicators[n % 14], id: String(n), note: 'Observación para revisar el indicador y verificar los datos del mes.' })) };
+ const longPdf = await incentivePdf(longPlan, calculatePlan(longPlan, []), 'Responsable de prueba');
+ assert.ok(longPdf.getNumberOfPages() > 1);
+ console.log(`PASS: PDF signature, total and pagination (${longPdf.getNumberOfPages()} pages for 70 indicators)`);
+})().catch(e => { console.error(e); process.exitCode = 1; });
