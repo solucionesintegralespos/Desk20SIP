@@ -7,6 +7,7 @@ import Link from 'next/link'
 import TechnicianPicker from './TechnicianPicker'
 import { showTicketCreatedNotice } from './TicketCreatedNotice'
 import { useTicketsListHref } from '@/lib/tickets-list-query'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 
 interface Category {
   id: string
@@ -262,7 +263,7 @@ export default function CreateTicketForm({ currentUser }: CreateTicketFormProps)
           </Link>
           <button
             type="submit"
-            disabled={loading || !formData.priority || !formData.type || !formData.categoryId || !formData.assigneeIds.length}
+            disabled={loading || !formData.customerId || !formData.priority || !formData.type || !formData.categoryId || !formData.assigneeIds.length}
             className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Creando...' : 'Crear Ticket'}
@@ -276,29 +277,22 @@ export default function CreateTicketForm({ currentUser }: CreateTicketFormProps)
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="ticket-customer" className="block text-sm font-medium text-gray-700 mb-2">
             Cliente <span className="text-red-500">*</span>
           </label>
-          <select
-            required
-            value={formData.customerId}
-            onChange={(e) => setFormData({ ...formData, customerId: e.target.value })}
-            disabled={currentUser.role === 'CUSTOMER'}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-          >
-            {currentUser.role === 'CUSTOMER' ? (
+          {currentUser.role === 'CUSTOMER' ? (
+            <select id="ticket-customer" value={currentUser.id} disabled className="w-full px-4 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:cursor-not-allowed">
               <option value={currentUser.id}>Mi cuenta</option>
-            ) : (
-              <>
-                <option value="">Seleccionar cliente...</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name || customer.email}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
+            </select>
+          ) : (
+            <SearchSelect
+              id="ticket-customer"
+              placeholder="Buscar cliente por nombre o correo…"
+              options={customers.map(customer => ({ id: customer.id, label: customer.name || customer.email || 'Sin nombre', description: customer.name ? customer.email || undefined : undefined }))}
+              value={formData.customerId}
+              onChange={customerId => setFormData({ ...formData, customerId })}
+            />
+          )}
         </div>
 
         <div>

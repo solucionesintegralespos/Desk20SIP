@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { MessageSquare, Clock, Circle, XCircle } from 'lucide-react'
 
 interface StatsCardsProps {
-  date: string
   stats: {
     open: number
     pending: number
@@ -13,7 +12,7 @@ interface StatsCardsProps {
   }
 }
 
-export default function StatsCards({ stats, date }: StatsCardsProps) {
+export default function StatsCards({ stats }: StatsCardsProps) {
   const cards = [
     {
       title: 'Abiertos',
@@ -60,7 +59,7 @@ export default function StatsCards({ stats, date }: StatsCardsProps) {
         return (
           <Link 
             key={card.title} 
-            href={`${card.link}${card.link.includes('?') ? '&' : '?'}mine=1&date=${date}`}
+            href={`${card.link}${card.link.includes('?') ? '&' : '?'}mine=1&range=all`}
             className={`flex min-w-0 flex-col justify-center bg-white rounded-xl shadow-sm border border-primary-100 border-t-4 ${card.accent} p-5 hover:shadow-lg transition-shadow cursor-pointer`}
           >
             <div className="flex items-center justify-between">

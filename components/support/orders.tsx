@@ -11,6 +11,7 @@ import type { WorkOrder } from '@/lib/support/model';
 import { completeOrder } from '@/lib/support/rules';
 import { serviceDate, datetimeLocal, serviceDay } from '@/lib/support/order-display';
 import { SearchFilter, searchText, type SearchValue } from './SearchFilter';
+import { SearchSelect, byLabel } from '@/components/ui/SearchSelect';
 
 export function Orders() {
   const { state, user, save, detail, dateFrom: date, setDates, loading } = useSupport();
@@ -20,8 +21,8 @@ export function Orders() {
   const setDate = (value: string) => setDates(value, value);
   const [technicianFilter, setTechnicianFilter] = useState<SearchValue>({ query: '', id: '' });
   const [clientFilter, setClientFilter] = useState<SearchValue>({ query: '', id: '' });
-  const technicianOptions = state.users.map(tech => ({ id: tech.id, label: tech.name || tech.email, description: tech.email }));
-  const clientOptions = state.clients.map(client => ({ id: client.id, label: client.businessName || client.name || client.email, description: client.email }));
+  const technicianOptions = state.users.map(tech => ({ id: tech.id, label: tech.name || tech.email, description: tech.email })).sort(byLabel);
+  const clientOptions = state.clients.map(client => ({ id: client.id, label: client.businessName || client.name || client.email, description: client.email })).sort(byLabel);
   const techniciansById = new Map(technicianOptions.map(option => [option.id, option]));
   const clientsById = new Map(clientOptions.map(option => [option.id, option]));
   const hasFilters = !!(date || technicianFilter.query || clientFilter.query);
@@ -65,7 +66,7 @@ export function Orders() {
     <div className="page-heading orders-heading">
       <div><p className="eyebrow">ATENCIÓN EN CAMPO</p><h1>Órdenes de servicio</h1><p className="text-slate-500">Del trabajo realizado a la aceptación del cliente.</p></div>
       <Button disabled={busy || !can(user, 'orders', 'create')} onClick={() => setDraft({
-        id: uid(), number: '', clientId: state.clients[0]?.id || '', techId: user.id,
+        id: uid(), number: '', clientId: '', techId: user.id,
         serviceName: '', status: 'in_progress', startTime: new Date().toISOString(), diagnosis: '',
         workDone: '', observations: '', signerName: '', consent: false,
       })}><Plus /> Nueva orden</Button>
@@ -123,7 +124,7 @@ export function Orders() {
         {draft && <form className="detail-stack" onSubmit={event => { event.preventDefault(); if (readOnly || busy) return; try { void persist(completeOrder(draft)); } catch (error) { toast.error((error as Error).message); } }}>
           <fieldset disabled={readOnly} className="detail-stack">
             <div className="form-grid">
-              <Field label="Cliente"><Pick label="Cliente" value={draft.clientId} onChange={clientId => set({ clientId, ticketId: undefined, checklistId: undefined })} options={state.clients.map(c => ({ value: c.id, label: c.businessName }))} /></Field>
+              <Field label="Cliente"><SearchSelect aria-label="Cliente" placeholder="Buscar cliente…" value={draft.clientId} onChange={clientId => set({ clientId, ticketId: undefined, checklistId: undefined })} options={clientOptions} /></Field>
               <Field label="Técnico responsable"><Input readOnly value={state.users.find(u => u.id === draft.techId)?.name || user.name} /></Field>
             </div>
             <Field label="Fecha y hora del servicio"><Input type="datetime-local" required value={datetimeLocal(draft.startTime)} onChange={event => set({ startTime: event.target.value ? new Date(event.target.value).toISOString() : '' })} /></Field>

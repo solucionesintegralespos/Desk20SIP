@@ -11,7 +11,9 @@ interface TicketFiltersProps {
   currentAssignee?: string
   currentSearch?: string
   currentCategory?: string
-  currentDate?: string
+  currentFrom?: string
+  currentTo?: string
+  dateFiltered?: boolean
   categories: Array<{ id: string; name: string }>
   agents: Array<{
     id: string
@@ -26,7 +28,9 @@ export default function TicketFilters({
   currentAssignee,
   currentSearch,
   currentCategory,
-  currentDate,
+  currentFrom,
+  currentTo,
+  dateFiltered,
   categories,
   agents,
 }: TicketFiltersProps) {
@@ -41,24 +45,29 @@ export default function TicketFilters({
   useEffect(() => { rememberTicketsQuery(query) }, [query])
   useEffect(() => { setSearchTerm(currentSearch || '') }, [currentSearch])
 
-  const updateFilter = (key: string, value: string) => {
-    const params = new URLSearchParams()
-    if (searchParams.get('mine') === '1') params.set('mine', '1')
-    
-    if (currentStatus && key !== 'status') params.set('status', currentStatus)
-    if (currentPriority && key !== 'priority') params.set('priority', currentPriority)
-    if (currentAssignee && key !== 'assignee') params.set('assignee', currentAssignee)
-    if (currentCategory && key !== 'category') params.set('category', currentCategory)
-    if (currentDate && key !== 'date') params.set('date', currentDate)
-    if (searchTerm && key !== 'search') params.set('search', searchTerm)
-    
-    if (value) {
-      params.set(key, value)
-    }
-
-    const query = params.toString()
-    router.push(`${pathname}${query ? `?${query}` : ''}`)
+  // Every change starts from the current URL and returns to the first page.
+  const navigate = (change: (params: URLSearchParams) => void) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('page')
+    if (searchTerm) params.set('search', searchTerm); else params.delete('search')
+    change(params)
+    const next = params.toString()
+    router.push(`${pathname}${next ? `?${next}` : ''}`)
   }
+
+  const updateFilter = (key: string, value: string) => navigate(params => {
+    if (value) params.set(key, value); else params.delete(key)
+  })
+
+  // Inclusive creation-date range; clearing both dates shows every date.
+  const updateRange = (from: string, to: string) => navigate(params => {
+    params.delete('date'); params.delete('range'); params.delete('from'); params.delete('to')
+    if (from && to && to < from) to = from
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    if (!from && !to) params.set('range', 'all')
+  })
+  const allDates = searchParams.get('range') === 'all'
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,7 +79,7 @@ export default function TicketFilters({
     router.push(searchParams.get('mine') === '1' ? `${pathname}?mine=1` : pathname)
   }
 
-  const hasFilters = currentStatus || currentPriority || currentAssignee || currentSearch || currentCategory || currentDate
+  const hasFilters = currentStatus || currentPriority || currentAssignee || currentSearch || currentCategory || dateFiltered
 
   return (
     <div className="bg-white rounded-lg shadow p-4 mb-6">
@@ -142,15 +151,36 @@ export default function TicketFilters({
           ))}
         </select>
 
-        <label className="flex flex-col md:flex-row md:items-center gap-2 text-sm text-gray-700">
-          Fecha de creación:
-          <input
-            type="date"
-            value={currentDate || ''}
-            onChange={(e) => updateFilter('date', e.target.value)}
-            className="w-full md:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-          />
-        </label>
+        <fieldset className="flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 text-sm text-gray-700">
+          <legend className="float-left md:mr-1">Fecha de creación:</legend>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              aria-label="Desde"
+              title="Desde"
+              value={currentFrom || ''}
+              max={currentTo || undefined}
+              onChange={(e) => updateRange(e.target.value, currentTo || '')}
+              className="min-w-0 flex-1 md:flex-none px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <span aria-hidden="true">a</span>
+            <input
+              type="date"
+              aria-label="Hasta"
+              title="Hasta"
+              value={currentTo || ''}
+              min={currentFrom || undefined}
+              onChange={(e) => updateRange(currentFrom || '', e.target.value)}
+              className="min-w-0 flex-1 md:flex-none px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div className="flex gap-1">
+            <button type="button" onClick={() => navigate(params => { params.delete('date'); params.delete('range'); params.delete('from'); params.delete('to') })}
+              className="px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-50">Hoy</button>
+            <button type="button" aria-pressed={allDates} onClick={() => updateRange('', '')}
+              className={`px-3 py-2 rounded-lg border ${allDates ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-gray-300 hover:bg-gray-50'}`}>Todas</button>
+          </div>
+        </fieldset>
 
         {hasFilters && (
           <button

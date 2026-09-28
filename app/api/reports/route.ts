@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -25,12 +26,28 @@ export async function GET(request: Request) {
     const categoryWhere = category ? { categoryId: category } : {}
     const period = { gte: range.gte, lt: range.lt }
     const assigned = technician ? { OR: [{ assignments: { some: { userId: technician } } }, { assignments: { none: {} }, assigneeId: technician }] } : {}
-    const [entries, closures, open, pending] = await Promise.all([
+    // Tickets created per month over the last six years (Bogotá calendar), same filters as "digitados".
+    const currentYear = Number(serviceDay(new Date().toISOString()).slice(0, 4)), firstYear = currentYear - 5
+    const localCreated = Prisma.sql`("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Bogota')`
+    const monthlyQuery = prisma.$queryRaw<{ year: number; month: number; count: number }[]>`
+      SELECT EXTRACT(YEAR FROM ${localCreated})::int AS year, EXTRACT(MONTH FROM ${localCreated})::int AS month, COUNT(*)::int AS count
+      FROM "Ticket"
+      WHERE ${localCreated} >= make_timestamp(${firstYear}::int, 1, 1, 0, 0, 0)
+        ${category ? Prisma.sql`AND "categoryId" = ${category}` : Prisma.empty}
+        ${technician ? Prisma.sql`AND "enteredById" = ${technician}` : Prisma.empty}
+      GROUP BY 1, 2`
+    const [entries, closures, open, pending, monthlyRows] = await Promise.all([
       prisma.ticket.findMany({ where: { ...categoryWhere, createdAt: period, ...(technician ? { enteredById: technician } : {}) }, select: { enteredById: true, createdAt: true, categoryId: true } }),
       prisma.ticket.findMany({ where: { ...categoryWhere, status: 'CLOSED', closedAt: period, ...(technician ? { closedById: technician } : {}) }, select: { closedById: true, closedAt: true } }),
       prisma.ticket.count({ where: { ...categoryWhere, ...assigned, status: 'OPEN' } }),
       prisma.ticket.count({ where: { ...categoryWhere, ...assigned, status: 'PENDING' } }),
+      monthlyQuery,
     ])
+    const years = Array.from(new Set([...monthlyRows.map(r => r.year), currentYear])).sort((a, b) => a - b)
+    const currentMonth = Number(serviceDay(new Date().toISOString()).slice(5, 7))
+    // Months that have not happened yet are null so the current year's line stops at today.
+    const monthly = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...Object.fromEntries(years.map(year => [year,
+      year === currentYear && i + 1 > currentMonth ? null : monthlyRows.find(r => r.year === year && r.month === i + 1)?.count || 0])) }))
     const activity = Array.from({ length: Math.round((range.lt.getTime() - range.gte.getTime()) / 86400000) }, (_, i) => ({ day: String(i + 1), entered: 0, closed: 0 }))
     const entryCounts = new Map<string, number>(), closureCounts = new Map<string, number>(), categoryCounts = new Map<string, number>()
     for (const t of entries) {
@@ -47,6 +64,7 @@ export async function GET(request: Request) {
       unattributed: entries.filter(t => !t.enteredById).length,
       rows: technicians.filter(t => !technician || t.id === technician).map(t => ({ id: t.id, name: t.name || t.email || 'Usuario', avatar: t.avatar, entered: entryCounts.get(t.id) || 0, closed: closureCounts.get(t.id) || 0, entryGoal: t.dailyEntryGoal, closureGoal: t.dailyClosureGoal })),
       activity,
+      monthly: { years, rows: monthly },
       byCategory: Array.from(categoryCounts, ([id, count]) => ({ name: categories.find(c => c.id === id)?.name || 'Sin categoría', count })).sort((a,b) => b.count - a.count),
     })
   } catch (error) {

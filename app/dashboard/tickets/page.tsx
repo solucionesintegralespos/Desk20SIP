@@ -16,6 +16,9 @@ interface SearchParams {
   search?: string
   category?: string
   date?: string
+  from?: string
+  to?: string
+  range?: string
   page?: string
   mine?: string
 }
@@ -42,7 +45,7 @@ export default async function TicketsPage({
   const perPage = 20
   const skip = (page - 1) * perPage
 
-  const whereClause: any = searchParams.mine === '1' ? personalDashboardWhere(user, searchParams.date) : {}
+  const whereClause: any = searchParams.mine === '1' ? personalDashboardWhere(user) : {}
   
   // Si es CUSTOMER, solo puede ver sus propios tickets
   if (user.role === 'CUSTOMER') {
@@ -76,8 +79,12 @@ export default async function TicketsPage({
     whereClause.categoryId = searchParams.category === 'uncategorized' ? null : searchParams.category
   }
 
-  const range = dailyRange(searchParams.date)
-  whereClause.createdAt = { gte: range.gte, lt: range.lt }
+  // Creation date range in Colombia (from/to, inclusive). Without dates the list shows today;
+  // range=all removes the date filter. `date` is the former single-day parameter.
+  const allDates = searchParams.range === 'all'
+  const range = dailyRange(searchParams.from || searchParams.date, searchParams.to || searchParams.date)
+  if (!allDates) whereClause.createdAt = { gte: range.gte, lt: range.lt }
+  const dateFiltered = allDates || !!(searchParams.from || searchParams.to || searchParams.date)
 
   const [tickets, totalCount, agents, categories] = await Promise.all([
     prisma.ticket.findMany({
@@ -156,7 +163,9 @@ export default async function TicketsPage({
             currentAssignee={searchParams.assignee}
             currentSearch={searchParams.search}
             currentCategory={searchParams.category}
-            currentDate={range.dateFrom}
+            currentFrom={allDates ? '' : range.dateFrom}
+            currentTo={allDates ? '' : range.dateTo}
+            dateFiltered={dateFiltered}
             categories={categories}
             agents={agents}
           />

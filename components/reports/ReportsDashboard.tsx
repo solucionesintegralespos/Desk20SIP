@@ -10,7 +10,14 @@ type Report = {
   summary: { entered: number; closed: number; open: number; pending: number };
   technicians: { id: string; name: string | null; email: string | null }[]; categories: { id: string; name: string }[];
   rows: Row[]; activity: { day: string; entered: number; closed: number }[]; byCategory: { name: string; count: number }[]
+  monthly: { years: number[]; rows: Array<{ month: number } & Record<string, number | null>> }
 }
+const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+// Validated categorical order. The color follows the year itself, so a year keeps its color
+// whatever other years are present; six consecutive years never share one.
+const YEAR_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300']
+const yearColor = (year: number) => YEAR_COLORS[year % YEAR_COLORS.length]
+const yearTotal = (data: Report, year: number) => data.monthly.rows.reduce((sum, row) => sum + (row[year] || 0), 0)
 const percent = (count: number, goal: number | null) => goal ? Math.round(count / goal * 100) : null
 function Progress({ count, goal, color }: { count: number; goal: number | null; color: string }) {
   const value = percent(count, goal)
@@ -21,6 +28,7 @@ export default function ReportsDashboard() {
   const [technician, setTechnician] = useState(''), [category, setCategory] = useState('')
   const [data, setData] = useState<Report | null>(null)
   const [loading, setLoading] = useState(true), [error, setError] = useState('')
+  const [monthlyTable, setMonthlyTable] = useState(false)
   const requestId = useRef(0)
   async function consult() {
     const id = ++requestId.current
@@ -43,6 +51,7 @@ export default function ReportsDashboard() {
       ...data.rows.map(r => [r.name, r.entered, r.entryGoal ?? 'Sin meta', percent(r.entered,r.entryGoal) ?? '', r.closed, r.closureGoal ?? 'Sin meta', percent(r.closed,r.closureGoal) ?? '']),
       [], ['Día', 'Digitados', 'Cerrados'], ...data.activity.map(r => [r.day, r.entered, r.closed]),
       [], ['Categoría', 'Tickets digitados'], ...data.byCategory.map(r => [r.name,r.count]),
+      [], ['Tickets por mes', ...MONTHS, 'Total'], ...data.monthly.years.map(year => [year, ...data.monthly.rows.map(r => r[year] ?? ''), yearTotal(data, year)]),
       [], ['Nota', 'Metas configuradas actualmente. Abiertos y pendientes corresponden al estado actual.'], ['Sin autor de digitación', data.unattributed],
     ]
     const escape = (value: string | number) => '"' + String(value).replace(/^[=+@\-\t\r]/, "'$&").replace(/"/g, '""') + '"'
@@ -75,6 +84,27 @@ export default function ReportsDashboard() {
       </section>
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]"><section className={panel}><h2 className="mb-4 font-semibold">Actividad durante el mes</h2><div className="h-64"><ResponsiveContainer width="100%" height="100%"><LineChart data={data.activity}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" /><YAxis allowDecimals={false} /><Tooltip /><Legend /><Line dataKey="entered" name="Digitados" stroke="#8b5cf6" strokeWidth={2} dot={false} /><Line dataKey="closed" name="Cerrados" stroke="#3b82f6" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div></section>
         <section className={panel}><h2 className="font-semibold">Tickets por categoría</h2><p className="mt-1 text-xs text-gray-500">Digitados en el mes seleccionado</p><div className="mt-5 max-h-60 space-y-4 overflow-y-auto">{data.byCategory.map(c => <div key={c.name}><div className="mb-1 flex justify-between gap-3 text-sm"><span>{c.name}</span><strong>{c.count}</strong></div><div className="h-3 rounded-full bg-gray-100"><div className="h-3 rounded-full bg-blue-500" style={{ width: `${c.count / Math.max(...data.byCategory.map(v => v.count),1) * 100}%` }} /></div></div>)}{!data.byCategory.length && <p className="py-10 text-center text-sm text-gray-500">Sin tickets en este período.</p>}</div></section></div>
+      <section className={panel} aria-labelledby="monthly-title">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><h2 id="monthly-title" className="font-semibold">Tickets por mes de cada año</h2>
+            <p className="mt-1 text-xs text-gray-500">Tickets creados en cada mes (hora de Colombia) · hasta 6 años · el mes en curso está incompleto · aplica los filtros de técnico y categoría</p></div>
+          <button type="button" aria-pressed={monthlyTable} onClick={() => setMonthlyTable(v => !v)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">{monthlyTable ? 'Ver gráfica' : 'Ver tabla'}</button>
+        </div>
+        {monthlyTable ? <div className="mt-4 overflow-x-auto"><table className="w-full text-right text-sm tabular-nums">
+          <caption className="sr-only">Tickets creados por mes y año</caption>
+          <thead className="bg-gray-50 text-gray-600"><tr><th scope="col" className="p-2 text-left font-medium">Año</th>{MONTHS.map(m => <th key={m} scope="col" className="p-2 font-medium">{m}</th>)}<th scope="col" className="p-2 font-medium">Total</th></tr></thead>
+          <tbody>{data.monthly.years.map(year => <tr key={year} className="border-b border-gray-100"><th scope="row" className="p-2 text-left font-medium"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ background: yearColor(year) }} aria-hidden="true" />{year}</th>{data.monthly.rows.map(r => <td key={r.month} className="p-2">{r[year] ?? '—'}</td>)}<td className="p-2 font-semibold">{yearTotal(data, year)}</td></tr>)}</tbody>
+        </table></div> : <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data.monthly.rows} margin={{ top: 8, right: 16, bottom: 0, left: -8 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="month" tickFormatter={m => MONTHS[m - 1]} tickLine={false} />
+            <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+            <Tooltip labelFormatter={m => MONTHS[Number(m) - 1]} formatter={(value, name) => [value ?? '—', name]} />
+            <Legend formatter={value => <span className="text-gray-700">{value}</span>} />
+            {data.monthly.years.map(year => <Line key={year} dataKey={String(year)} name={String(year)} stroke={yearColor(year)} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, stroke: '#fff', fill: yearColor(year) }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} connectNulls={false} isAnimationActive={false} />)}
+          </LineChart>
+        </ResponsiveContainer></div>}
+      </section>
       <p className="text-xs leading-5 text-gray-500">Mes calendario · Hora de Colombia. Metas configuradas actualmente; el filtro de categoría compara su actividad con la meta mensual completa. Abiertos y pendientes son el estado actual de los tickets asignados, independientemente del mes. Los cierres se atribuyen a quien los realizó y dejan de contar al reabrirse.{data.unattributed > 0 && ` Hay ${data.unattributed} tickets sin autor registrado incluidos en el total, pero no en las metas individuales.`}</p>
     </>}
   </div>

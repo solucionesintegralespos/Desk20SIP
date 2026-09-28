@@ -11,6 +11,7 @@ import { colombiaHolidays } from '@/lib/colombia-holidays';
 import { serviceDay } from '@/lib/support/order-display';
 import { eventSchema, statusLabels, timeLabel, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
 import { SCHEDULE_CHANGED } from '@/components/reminders/TaskReminders';
+import { SearchSelect } from '@/components/ui/SearchSelect';
 
 type Data = { events: ScheduleEvent[]; engineers: SchedulePerson[]; clients: SchedulePerson[] };
 type Draft = Omit<ScheduleEvent, 'id' | 'revision'> & { id?: string; revision?: number };
@@ -120,7 +121,7 @@ export default function EngineerSchedule() {
     </>}
     <Dialog open={!!draft} onOpenChange={value => { if (!value && !busy) setDraft(null); }}><DialogContent><DialogHeader><DialogTitle>{draft?.id ? 'Detalle del evento' : 'Nuevo evento'}</DialogTitle><DialogDescription>Programa una actividad para un ingeniero y un día.</DialogDescription></DialogHeader>{draft && <form onSubmit={event => { event.preventDefault(); void persist(); }} className="detail-stack"><fieldset disabled={busy} className="detail-stack">
       <Field label="Tarea"><Input required maxLength={160} value={draft.title} onChange={event => patch({ title: event.target.value })} /></Field>
-      <div className="form-grid"><Field label="Ingeniero"><select required className="border rounded-lg p-2" value={draft.techId} onChange={event => patch({ techId: event.target.value })}>{data.engineers.map(person => <option key={person.id} value={person.id}>{name(person)}</option>)}</select></Field><Field label="Cliente"><select className="border rounded-lg p-2" value={draft.clientId || ''} onChange={event => patch({ clientId: event.target.value || null })}><option value="">Sin cliente / actividad interna</option>{data.clients.map(person => <option key={person.id} value={person.id}>{name(person)}</option>)}</select></Field></div>
+      <div className="form-grid"><Field label="Ingeniero"><select required className="border rounded-lg p-2" value={draft.techId} onChange={event => patch({ techId: event.target.value })}>{data.engineers.map(person => <option key={person.id} value={person.id}>{name(person)}</option>)}</select></Field><Field label="Cliente"><SearchSelect aria-label="Cliente" placeholder="Buscar cliente…" emptyOption="Sin cliente / actividad interna" value={draft.clientId || ''} onChange={clientId => patch({ clientId: clientId || null })} options={data.clients.map(person => ({ id: person.id, label: name(person), description: person.name ? person.email || undefined : undefined }))} /></Field></div>
       <div className="form-grid"><Field label="Fecha"><Input required type="date" value={draft.date} onChange={event => patch({ date: event.target.value })} /></Field><Field label="Estado"><select className="border rounded-lg p-2" value={draft.status} onChange={event => patch({ status: event.target.value as Draft['status'] })}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field></div>
       <Field label="Hora inicial"><Input required type="time" value={draft.start} onChange={event => patch({ start: event.target.value })} /></Field>
       <Field label="Descripción"><Textarea rows={3} maxLength={5000} value={draft.description} onChange={event => patch({ description: event.target.value })} /></Field>

@@ -7,9 +7,11 @@ interface PaginationProps {
   currentPage: number
   totalPages: number
   totalCount: number
+  perPage?: number
+  itemLabel?: string
 }
 
-export default function Pagination({ currentPage, totalPages, totalCount }: PaginationProps) {
+export default function Pagination({ currentPage, totalPages, totalCount, perPage = 20, itemLabel = 'tickets' }: PaginationProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -62,9 +64,9 @@ export default function Pagination({ currentPage, totalPages, totalCount }: Pagi
       <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
         <div>
           <p className="text-sm text-gray-700">
-            Mostrando <span className="font-medium">{(currentPage - 1) * 20 + 1}</span> a{' '}
-            <span className="font-medium">{Math.min(currentPage * 20, totalCount)}</span> de{' '}
-            <span className="font-medium">{totalCount}</span> tickets
+            Mostrando <span className="font-medium">{(currentPage - 1) * perPage + 1}</span> a{' '}
+            <span className="font-medium">{Math.min(currentPage * perPage, totalCount)}</span> de{' '}
+            <span className="font-medium">{totalCount}</span> {itemLabel}
           </p>
         </div>
         <div>

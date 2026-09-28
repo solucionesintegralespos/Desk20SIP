@@ -1,10 +1,10 @@
 'use client'
 
 import ViewToggle, { DirectoryView } from '../ViewToggle'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Mail, Phone, MapPin, Building, Ticket, Edit2, Trash2, Link as LinkIcon, Check } from 'lucide-react'
 import { toast } from 'react-hot-toast'
@@ -33,20 +33,33 @@ interface Customer {
 
 interface CustomersTableProps {
   customers: Customer[]
+  hasCustomers: boolean
+  query: string
 }
 
-export default function CustomersTable({ customers }: CustomersTableProps) {
+export default function CustomersTable({ customers, hasCustomers, query }: CustomersTableProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [view, setView] = useState<DirectoryView>('cards')
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchTerm, setSearchTerm] = useState(query)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [loadingToken, setLoadingToken] = useState<string | null>(null)
+  // The page already holds the matching customers; the search lives in the URL.
+  const filteredCustomers = customers
 
-  const filteredCustomers = customers.filter(customer => 
-    customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.organization?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  useEffect(() => { setSearchTerm(query) }, [query])
+  useEffect(() => {
+    if (searchTerm.trim() === query) return
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString())
+      if (searchTerm.trim()) params.set('q', searchTerm.trim()); else params.delete('q')
+      params.delete('page')
+      const next = params.toString()
+      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false })
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchTerm, query, pathname, router, searchParams])
 
   const handleDelete = async (id: string) => {
     if (!confirm('¿Estás seguro de que quieres eliminar este cliente?')) return
@@ -92,7 +105,7 @@ export default function CustomersTable({ customers }: CustomersTableProps) {
     }
   }
 
-  if (customers.length === 0) {
+  if (!hasCustomers) {
     return (
       <div className="bg-white rounded-lg shadow p-12 text-center">
         <p className="text-gray-500 text-lg">No hay clientes registrados</p>

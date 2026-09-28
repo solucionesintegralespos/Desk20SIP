@@ -5,7 +5,6 @@ import { redirect } from 'next/navigation'
 import TicketList from '@/components/dashboard/TicketList'
 import StatsCards from '@/components/dashboard/StatsCards'
 import { personalDashboardWhere } from '@/lib/personal-dashboard'
-import { dailyRange } from '@/lib/daily-filter'
 import PerformanceCard from '@/components/dashboard/PerformanceCard'
 import { monthlyRange } from '@/lib/monthly-performance'
 
@@ -16,9 +15,8 @@ export default async function DashboardPage() {
   const user = await getDashboardUser()
   if (!user) redirect('/login')
 
-  // Filtrar tickets según el rol
-  const date = dailyRange().dateFrom
-  const statsWhere = personalDashboardWhere(user, date)
+  // All tickets of the user (assigned, or their own as a customer), any date.
+  const statsWhere = personalDashboardWhere(user)
   const ticketWhere = { ...statsWhere, status: 'OPEN' as const }
   
   const ticketsPromise = prisma.ticket.findMany({
@@ -72,12 +70,11 @@ export default async function DashboardPage() {
         <div className="p-4 md:p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-            <p className="text-gray-600 mt-1">Mis tickets de hoy · {date} · Hora de Colombia</p>
+            <p className="text-gray-600 mt-1">{user.role === 'CUSTOMER' ? 'Todos mis tickets' : 'Todos los tickets asignados a mí'}</p>
           </div>
 
           <div className={`mb-6 grid items-stretch gap-5 ${user.role !== 'CUSTOMER' ? 'xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : ''}`}>
           <StatsCards
-            date={date}
             stats={{
               open: stats[0],
               pending: stats[1],
