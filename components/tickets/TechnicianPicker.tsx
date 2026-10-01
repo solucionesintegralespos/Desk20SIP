@@ -45,7 +45,9 @@ export default function TechnicianPicker({ agents, value, onChange, disabled = f
           className="w-full rounded-md border border-gray-300 py-2 pl-8 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div className="max-h-44 overflow-y-auto p-1">
-        {matches.map(agent => <label key={agent.id} className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-gray-50 ${value.includes(agent.id) ? 'bg-primary-50' : ''}`}>
+        {/* The whole row toggles the technician. Keeping focus on mousedown stops the
+            blur handler from closing the list before the click on the name arrives. */}
+        {matches.map(agent => <label key={agent.id} onMouseDown={event => event.preventDefault()} className={`flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-gray-50 ${value.includes(agent.id) ? 'bg-primary-50' : ''}`}>
           <input type="checkbox" checked={value.includes(agent.id)}
             onChange={event => onChange(event.target.checked ? [...value, agent.id] : value.filter(id => id !== agent.id))} />
           <span className="min-w-0 break-words">{label(agent)}</span>

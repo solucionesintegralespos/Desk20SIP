@@ -248,28 +248,6 @@ export default function CreateTicketForm({ currentUser }: CreateTicketFormProps)
       </div>
 
       <form onSubmit={handleSubmit} className="p-6 space-y-6">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-            {error}
-          </div>
-        )}
-
-        <div className="flex justify-end space-x-3 pb-4 border-b">
-          <Link
-            href={ticketsListHref}
-            className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-          >
-            Cancelar
-          </Link>
-          <button
-            type="submit"
-            disabled={loading || !formData.customerId || !formData.priority || !formData.type || !formData.categoryId || !formData.assigneeIds.length}
-            className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Creando...' : 'Crear Ticket'}
-          </button>
-        </div>
-
         {/* The API records the session user as the creator. */}
         <div>
           <label htmlFor="ticket-creator" className="block text-sm font-medium text-gray-700 mb-2">Creado por</label>
@@ -505,6 +483,28 @@ export default function CreateTicketForm({ currentUser }: CreateTicketFormProps)
               </div>
             </div>
           )}
+        </div>
+
+        {error && (
+          <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end space-x-3 pt-4 border-t">
+          <Link
+            href={ticketsListHref}
+            className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+          >
+            Cancelar
+          </Link>
+          <button
+            type="submit"
+            disabled={loading || !formData.customerId || !formData.priority || !formData.type || !formData.categoryId || !formData.assigneeIds.length}
+            className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Creando...' : 'Crear Ticket'}
+          </button>
         </div>
       </form>
     </div>

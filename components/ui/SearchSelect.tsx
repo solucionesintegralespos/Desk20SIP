@@ -38,6 +38,8 @@ export function SearchSelect({ options, value, onChange, placeholder = 'Buscarâ€
   function close() { setOpen(false); setQuery(''); setActive(-1) }
   function choose(option: SearchOption) { onChange(option.id); close() }
 
+  // Forms often wrap this in a <label>; clicks inside the list call preventDefault so the label
+  // does not forward them to the input and reopen the list.
   return <div className={`relative min-w-0 ${className}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) close() }}>
     <input id={id} ref={input} role="combobox" aria-label={ariaLabel} aria-autocomplete="list" aria-expanded={open} aria-controls={`${id}-options`}
       aria-activedescendant={open && active >= 0 && matches[active] ? `${id}-option-${active}` : undefined}
@@ -56,11 +58,11 @@ export function SearchSelect({ options, value, onChange, placeholder = 'Buscarâ€
         if (event.key === 'Enter' && open) { event.preventDefault(); if (matches[active]) choose(matches[active]) }
       }} />
     <button type="button" tabIndex={-1} aria-hidden="true" disabled={disabled} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500"
-      onMouseDown={event => event.preventDefault()} onClick={() => { if (open) close(); else input.current?.focus() }}><ChevronDown size={16} /></button>
+      onMouseDown={event => event.preventDefault()} onClick={event => { event.preventDefault(); if (open) close(); else input.current?.focus() }}><ChevronDown size={16} /></button>
     {open && <ul id={`${id}-options`} role="listbox" aria-label={ariaLabel} className="absolute z-30 mt-1 max-h-64 overflow-y-auto w-full rounded-lg border border-gray-200 bg-white shadow-lg py-1">
       {matches.map((option, index) => <li key={option.id || 'empty'} id={`${id}-option-${index}`} role="option" aria-selected={option.id === value}
         className={`cursor-pointer px-3 py-2 text-sm ${active === index ? 'bg-primary-50' : option.id === value ? 'bg-gray-50' : 'hover:bg-gray-50'}`}
-        onMouseDown={event => event.preventDefault()} onClick={() => choose(option)} onMouseEnter={() => setActive(index)}>
+        onMouseDown={event => event.preventDefault()} onClick={event => { event.preventDefault(); choose(option) }} onMouseEnter={() => setActive(index)}>
         <span className={`block break-words ${option.id ? 'font-medium text-gray-900' : 'text-gray-500'}`}>{option.label}</span>
         {option.description && <span className="block break-words text-xs text-gray-500">{option.description}</span>}
       </li>)}
