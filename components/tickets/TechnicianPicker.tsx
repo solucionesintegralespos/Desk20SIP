@@ -3,11 +3,15 @@
 import { useId, useRef, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 
-export default function TechnicianPicker({ agents, value, onChange, disabled = false }: {
+export default function TechnicianPicker({ agents, value, onChange, disabled = false, label: title = 'Técnicos asignados', required = true, locked = [] }: {
   agents: Array<{ id: string; name: string | null; email?: string | null }>
   value: string[]
   onChange: (ids: string[]) => void
   disabled?: boolean
+  label?: string
+  required?: boolean
+  /** Technicians that stay selected, e.g. the person responsible for an order. */
+  locked?: string[]
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -25,7 +29,7 @@ export default function TechnicianPicker({ agents, value, onChange, disabled = f
   }} onKeyDown={event => {
     if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); trigger.current?.focus() }
   }}>
-    <legend id={`${id}-label`} className="mb-2 text-sm font-medium text-gray-700">Técnicos asignados *</legend>
+    <legend id={`${id}-label`} className="mb-2 text-sm font-medium text-gray-700">{title}{required && <span className="text-red-600" aria-hidden="true"> *</span>}</legend>
     <button ref={trigger} type="button" aria-labelledby={`${id}-label ${id}-summary`}
       aria-expanded={open} aria-controls={`${id}-options`}
       onClick={() => { if (open) close(); else setOpen(true) }}
@@ -48,7 +52,7 @@ export default function TechnicianPicker({ agents, value, onChange, disabled = f
         {/* The whole row toggles the technician. Keeping focus on mousedown stops the
             blur handler from closing the list before the click on the name arrives. */}
         {matches.map(agent => <label key={agent.id} onMouseDown={event => event.preventDefault()} className={`flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-gray-50 ${value.includes(agent.id) ? 'bg-primary-50' : ''}`}>
-          <input type="checkbox" checked={value.includes(agent.id)}
+          <input type="checkbox" checked={value.includes(agent.id)} disabled={locked.includes(agent.id)}
             onChange={event => onChange(event.target.checked ? [...value, agent.id] : value.filter(id => id !== agent.id))} />
           <span className="min-w-0 break-words">{label(agent)}</span>
         </label>)}

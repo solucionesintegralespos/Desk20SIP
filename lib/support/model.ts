@@ -102,7 +102,10 @@ export interface WorkOrder {
     ticketId?: string;
     checklistId?: string;
     clientId: string;
+    /** Responsible technician (the creator). */
     techId: string;
+    /** Every technician who worked on the order, responsible included. Older orders lack it. */
+    techIds?: string[];
     serviceName: string;
     status: 'in_progress' | 'completed';
     startTime: string;

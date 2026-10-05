@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { serviceUser, serviceError, ServiceError } from '@/lib/support/server';
-import { eventSchema } from '@/lib/schedule';
+import { eventSchema, eventTechIds } from '@/lib/schedule';
 import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -22,9 +22,10 @@ export async function POST(request: Request) {
     const body = await request.json();
     const parsed = eventSchema.safeParse(body);
     if (!parsed.success) throw new ServiceError(parsed.error.issues[0].message);
-    const event = parsed.data;
-    const technician = await prisma.user.findFirst({ where: { id: event.techId, role: { in: ['ADMIN', 'AGENT'] } } });
-    if (!technician) throw new ServiceError('Ingeniero no válido');
+    const techIds = Array.from(new Set(eventTechIds(parsed.data)));
+    const event = { ...parsed.data, techId: techIds[0], techIds };
+    const technicians = await prisma.user.count({ where: { id: { in: techIds }, role: { in: ['ADMIN', 'AGENT'] } } });
+    if (technicians !== techIds.length) throw new ServiceError('Ingeniero no válido');
     if (event.clientId && !await prisma.user.findFirst({ where: { id: event.clientId, role: 'CUSTOMER' } })) throw new ServiceError('Cliente no válido');
     const id = typeof body.id === 'string' && body.id ? body.id : randomUUID();
     await prisma.$transaction(async tx => {

@@ -10,6 +10,7 @@ export interface OrderPdfData {
   startTime: string
   endTime?: string
   technician: string
+  technicianCount?: number
   client: { name: string; email: string; phone: string; address: string; city: string }
   ticket?: { number: string; subject: string; priority: string }
   checklistNumber?: string
@@ -113,7 +114,7 @@ export async function orderPdf(order: OrderPdfData) {
   ])
   section('Información del servicio', [
     ['Servicio solicitado', order.serviceName],
-    ['Técnico asignado', order.technician],
+    [(order.technicianCount || 1) > 1 ? 'Técnicos asignados' : 'Técnico asignado', order.technician],
     ['Fecha programada', bogotaDate(order.startTime)],
     ['Hora programada', bogotaTime(order.startTime)],
     ['Prioridad', order.ticket?.priority || 'No aplica'],

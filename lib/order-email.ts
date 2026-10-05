@@ -7,6 +7,7 @@ import { sendEmail, getServiceOrderEmailTemplate, type EmailAttachment } from '@
 import { orderPdf, orderStatusLabels, bogotaDateTime, type OrderPdfData } from '@/lib/order-pdf'
 import { orderPdfUrl } from '@/lib/order-link'
 import type { WorkOrder, ChecklistRun } from '@/lib/support/model'
+import { orderTechIds } from '@/lib/support/order-display'
 
 export type OrderEmailStatus = 'pending' | 'sent' | 'failed' | 'skipped'
 // `message` is shown to staff, so it never carries SMTP details.
@@ -42,9 +43,9 @@ export async function orderDocument(orderId: string) {
   const record = await prisma.serviceRecord.findFirst({ where: { id: orderId, kind: 'orders' } })
   if (!record) return null
   const order = record.payload as unknown as WorkOrder
-  const [client, technician, ticket, checklist, branding] = await Promise.all([
+  const [client, technicians, ticket, checklist, branding] = await Promise.all([
     record.clientId ? prisma.user.findUnique({ where: { id: record.clientId }, select: { name: true, email: true, phone: true, address: true, location: true, emailNotifications: true } }) : null,
-    record.techId ? prisma.user.findUnique({ where: { id: record.techId }, select: { name: true, email: true } }) : null,
+    prisma.user.findMany({ where: { id: { in: orderTechIds({ techId: record.techId || '', techIds: order.techIds }).filter(Boolean) } }, select: { id: true, name: true, email: true } }),
     order.ticketId ? prisma.ticket.findUnique({ where: { id: order.ticketId }, select: { number: true, subject: true, priority: true } }) : null,
     order.checklistId ? prisma.serviceRecord.findFirst({ where: { id: order.checklistId, kind: 'checklists' }, select: { payload: true } }) : null,
     loadBranding(),
@@ -54,7 +55,9 @@ export async function orderDocument(orderId: string) {
     orgName: branding.orgName, logo: logo && { data: logo.data, format: logo.format },
     number: order.number || '', status: order.status, createdAt: record.createdAt.toISOString(),
     serviceName: order.serviceName, startTime: order.startTime, endTime: order.endTime,
-    technician: technician?.name || technician?.email || 'Técnico no disponible',
+    // Responsible first, then the others in the order they were assigned.
+    technician: orderTechIds({ techId: record.techId || '', techIds: order.techIds }).map(id => technicians.find(t => t.id === id)).filter(Boolean).map(t => t!.name || t!.email).join(', ') || 'Técnico no disponible',
+    technicianCount: orderTechIds({ techId: record.techId || '', techIds: order.techIds }).length,
     client: { name: client?.name || client?.email || 'Cliente', email: client?.email || '', phone: client?.phone || '', address: client?.address || '', city: client?.location || '' },
     ticket: ticket ? { number: `TK-${ticket.number}`, subject: ticket.subject, priority: priorityLabels[ticket.priority] || ticket.priority } : undefined,
     checklistNumber: (checklist?.payload as unknown as ChecklistRun | undefined)?.number,
@@ -111,7 +114,7 @@ export async function sendOrderCreatedEmail(orderId: string, actorId: string): P
     const template = getServiceOrderEmailTemplate({
       orgName: document.orgName, customerName: document.data.client.name, orderNumber: document.data.number || 'de servicio',
       serviceName: document.data.serviceName, status: orderStatusLabels[document.data.status] || 'En proceso',
-      serviceDate: bogotaDateTime(document.data.startTime), technician: document.data.technician,
+      serviceDate: bogotaDateTime(document.data.startTime), technician: document.data.technician, technicianCount: document.data.technicianCount,
       viewUrl: orderPdfUrl(orderId), logoCid: document.logo ? 'org-logo' : undefined,
     })
     const attachments: EmailAttachment[] = [{ filename: `orden-${(document.data.number || orderId).replace(/[^a-zA-Z0-9-]/g, '')}.pdf`, content: pdf, contentType: 'application/pdf' }]

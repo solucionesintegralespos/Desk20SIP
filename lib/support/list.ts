@@ -26,8 +26,11 @@ export function serviceList(kinds:string[],user:{id:string;role:string}, range =
         AND (CASE WHEN "kind" = 'orders' THEN NULLIF("payload"->>'startTime', '')::timestamptz
           ELSE COALESCE(NULLIF("payload"->>'completedAt', ''), NULLIF("payload"->>'createdAt', ''))::timestamptz END) < ${range.lt}
       ))
+      -- Agents see the orders they created or took part in (payload techIds).
       AND (${user.role==='ADMIN'} OR "kind"='templates' OR
-        CASE WHEN "kind"='orders' THEN "creatorId" ELSE "techId" END=${user.id})
+        CASE WHEN "kind"='orders' THEN "creatorId"=${user.id}
+          OR COALESCE("payload"->'techIds','[]'::jsonb) @> jsonb_build_array(${user.id}::text)
+        ELSE "techId"=${user.id} END)
     ORDER BY "updatedAt" DESC
   `)
 }

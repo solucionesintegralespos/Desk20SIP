@@ -182,6 +182,7 @@ export function getServiceOrderEmailTemplate(data: {
   status: string
   serviceDate: string
   technician: string
+  technicianCount?: number
   viewUrl?: string
   logoCid?: string
 }) {
@@ -217,7 +218,7 @@ export function getServiceOrderEmailTemplate(data: {
             ${row('Servicio', data.serviceName)}
             ${row('Estado', data.status)}
             ${row('Fecha del servicio', data.serviceDate)}
-            ${row('Técnico', data.technician)}
+            ${row((data.technicianCount || 1) > 1 ? 'Técnicos' : 'Técnico', data.technician)}
           </table>
         </td></tr>
       </table>
@@ -242,7 +243,7 @@ export function getServiceOrderEmailTemplate(data: {
   const text = [
     `Hola, ${data.customerName}`, '', 'Tu orden de servicio ha sido creada correctamente.', '',
     `Orden ${data.orderNumber}`, `Servicio: ${data.serviceName}`, `Estado: ${data.status}`,
-    `Fecha del servicio: ${data.serviceDate}`, `Técnico: ${data.technician}`, '',
+    `Fecha del servicio: ${data.serviceDate}`, `${(data.technicianCount || 1) > 1 ? 'Técnicos' : 'Técnico'}: ${data.technician}`, '',
     ...(data.viewUrl ? [`Ver orden de servicio: ${data.viewUrl}`, ''] : []),
     'Encontrarás el PDF de la orden adjunto a este correo.', '', `© ${year} ${data.orgName}`,
   ].join('\n')

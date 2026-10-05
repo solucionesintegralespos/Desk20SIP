@@ -2,7 +2,9 @@ import { z } from 'zod';
 
 export const eventSchema = z.object({
   title: z.string().trim().min(1, 'Escribe el nombre de la tarea').max(160),
-  techId: z.string().min(1),
+  techId: z.string().min(1, 'Selecciona al menos un ingeniero'),
+  // Every engineer assigned to the event; techId is the first one (kept for older records).
+  techIds: z.array(z.string().min(1)).max(20).optional(),
   clientId: z.string().nullable(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
     const parsed = new Date(value + 'T12:00:00Z');
@@ -15,6 +17,8 @@ export const eventSchema = z.object({
 
 export type ScheduleEvent = z.infer<typeof eventSchema> & { id: string; revision: number };
 export type SchedulePerson = { id: string; name: string | null; email: string | null; avatar?: string | null };
+// Events saved before multiple engineers only have techId.
+export const eventTechIds = (event: { techId: string; techIds?: string[] }) => event.techIds?.length ? event.techIds : [event.techId];
 export const statusLabels = { planned: 'Programado', in_progress: 'En proceso', completed: 'Completado', vacation: 'Vacaciones', available: 'Disponible' };
 
 // Events store Bogotá wall-clock dates and times. Colombia has no daylight saving

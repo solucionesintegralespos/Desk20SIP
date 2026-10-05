@@ -5,14 +5,25 @@ const fs = require('fs'), path = require('path'), Module = require('module'), ts
 Object.assign(process.env, { SMTP_HOST: 'smtp.test', SMTP_PORT: '587', SMTP_USER: 'mailer@test', SMTP_PASSWORD: 'secret', SMTP_FROM: 'SIP <mailer@test>', NEXTAUTH_SECRET: 'x'.repeat(40), NEXTAUTH_URL: 'http://localhost:5185' });
 delete process.env.APP_PUBLIC_URL;
 
-const users = new Map(), records = new Map(), settings = [], audit = [], sent = [];
+let ticketQuery, listRecords = [];
+const users = new Map(), records = new Map(), tickets = new Map(), settings = [], audit = [], sent = [];
 let smtpFailure = null, actor;
 const clone = value => JSON.parse(JSON.stringify(value));
 const pick = (row, select) => row && (select ? Object.fromEntries(Object.keys(select).map(key => [key, row[key]])) : row);
 let counter = 0;
 const db = {
-  user: { findUnique: async ({ where, select }) => pick(users.get(where.id), select) },
-  ticket: { findUnique: async () => null },
+  user: {
+    findUnique: async ({ where, select }) => pick(users.get(where.id), select),
+    findMany: async ({ where, select }) => (where.id ? where.id.in.map(id => users.get(id)) : [...users.values()].filter(u => where.role === u.role || where.role?.in?.includes(u.role))).filter(Boolean).map(u => pick(u, select)),
+    count: async ({ where }) => where.id.in.filter(id => ['ADMIN', 'AGENT'].includes(users.get(id)?.role)).length,
+  },
+  ticket: {
+    findUnique: async ({ where }) => tickets.get(where.id) || null,
+    findMany: async args => { ticketQuery = args; return [...tickets.values()]; },
+    updateMany: async ({ where, data }) => { const t = tickets.get(where.id); if (!t || !where.status.in.includes(t.status)) return { count: 0 }; Object.assign(t, data); return { count: 1 }; },
+  },
+  message: { create: async () => ({}) },
+  ticketAssignee: { findUnique: async ({ where }) => tickets.get(where.ticketId_userId.ticketId)?.assignees.includes(where.ticketId_userId.userId) ? {} : null },
   setting: { findMany: async () => settings },
   serviceAuditEvent: { create: async ({ data }) => audit.push(data) },
   serviceRecord: {
@@ -29,6 +40,7 @@ class ServiceError extends Error { constructor(message, status = 400) { super(me
 const original = Module._load;
 Module._load = function (name, parent, ...rest) {
   if (name === '@/lib/prisma') return { prisma: db };
+  if (name === '@/lib/support/list') return { serviceList: async () => listRecords };
   if (name === '@/lib/support/server') return { serviceUser: async () => actor, ServiceError, serviceError: e => Response.json({ error: e.message }, { status: e.status || 500 }) };
   if (name === 'nodemailer') return { __esModule: true, default: { createTransport: () => ({ sendMail: async mail => { if (smtpFailure) throw smtpFailure; sent.push(mail); return { messageId: `<${sent.length}@test>` }; } }) } };
   if (name.startsWith('@/')) name = path.resolve(name.slice(2));
@@ -36,6 +48,7 @@ Module._load = function (name, parent, ...rest) {
 };
 require.extensions['.ts'] = require.extensions['.tsx'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX } }).outputText, filename);
 const { POST } = require('../app/api/service/[entity]/route.ts');
+const { GET: openOrder } = require('../app/api/service/[entity]/[id]/route.ts');
 const { GET: publicPdf } = require('../app/api/public/orders/[id]/pdf/route.ts');
 const { orderPdfUrl, verifyOrderLink } = require('../lib/order-link.ts');
 const { getServiceOrderEmailTemplate, escapeHtml } = require('../lib/email.ts');
@@ -78,6 +91,40 @@ const log = id => records.get(`order-email:${id}`)?.payload;
   assert.ok(audit.some(e => e.entityId === ok.id && e.action === 'orders:email-sent'));
   fs.mkdirSync('tmp/pdfs', { recursive: true }); fs.writeFileSync('tmp/pdfs/order-email-preview.pdf', pdf.content); fs.writeFileSync('tmp/pdfs/order-email-preview.html', mail.html);
   console.log('PASS: order created, PDF generated and attached, HTML email sent to the order client, result logged.');
+
+  // 1b. Several technicians: all are stored (responsible first) and listed in the email; customers are rejected.
+  users.set('tech2', { id: 'tech2', name: 'Luis Mora', email: 'luis@sip.test', role: 'AGENT' });
+  const shared = order('client', { techIds: ['tech2', 'tech2'] });
+  result = await create(shared);
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.deepEqual(records.get(shared.id).payload.techIds, ['tech', 'tech2']);
+  assert.match(sent.at(-1).html, /Técnicos<\/td>[\s\S]*Ana Pérez, Luis Mora/);
+  assert.equal((await create(order('client', { techIds: ['client'] }))).status, 400);
+  console.log('PASS: orders keep several technicians, the responsible always included, and reject non-staff.');
+
+  // 1c. Added technicians can open the order; others cannot.
+  users.set('tech3', { id: 'tech3', name: 'Otro', email: 'otro@sip.test', role: 'AGENT' });
+  const view = async who => { actor = users.get(who); const r = await openOrder(new Request('http://localhost'), { params: { entity: 'orders', id: shared.id } }); actor = users.get('tech'); return r.status; };
+  assert.equal(await view('tech2'), 200, 'added technician sees the order');
+  assert.equal(await view('tech3'), 404, 'unrelated technician does not');
+  // 1d. Only open or pending tickets of the client can be linked, whatever their date.
+  tickets.set('closed', { id: 'closed', customerId: 'client', status: 'CLOSED', number: 7, subject: 'Viejo', priority: 'NORMAL', assignees: ['tech'] });
+  tickets.set('pending', { id: 'pending', customerId: 'client', status: 'PENDING', number: 8, subject: 'Pendiente', priority: 'HIGH', assignees: ['tech'] });
+  result = await create(order('client', { ticketId: 'closed' }));
+  assert.equal(result.status, 400); assert.match(result.body.error, /abiertos o pendientes/);
+  assert.equal((await create(order('client', { ticketId: 'pending' }))).status, 200);
+  assert.equal(tickets.get('pending').status, 'CLOSED', 'confirming the order closes the linked ticket');
+  // The order form receives open/pending tickets of any date, plus tickets linked to the listed orders.
+  const { GET: loadService } = require('../app/api/service/route.ts');
+  listRecords = [{ id: 'o1', kind: 'orders', revision: 1, payload: { ticketId: 'closed' } }];
+  const state = await (await loadService(new Request('http://localhost/api/service?scope=orders'))).json();
+  const [linkable, linked] = ticketQuery.where.OR;
+  assert.deepEqual(linkable.status, { in: ['OPEN', 'PENDING'] }); assert.equal(linkable.createdAt, undefined, 'no creation-date limit');
+  assert.deepEqual(linkable.assignments, { some: { userId: 'tech' } }, 'agents only get their assigned tickets');
+  assert.deepEqual(linked, { id: { in: ['closed'] } });
+  assert.equal(state.state.tickets.find(t => t.id === 'closed').status, 'closed');
+  assert.equal(state.state.tickets.find(t => t.id === 'pending').number, 'TK-8');
+  console.log('PASS: added technicians can open the order; only open or pending tickets of any date can be linked.');
 
   // 2. SMTP failure: the order stays, the error is logged, staff get a safe message.
   smtpFailure = new Error('535 Invalid login: secret-detail');

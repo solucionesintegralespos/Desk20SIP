@@ -26,6 +26,9 @@ El personal de soporte puede crear, editar y eliminar eventos compartidos con cl
 fecha, horario, descripción y estado. Incluye vacaciones, filtros, fin de semana opcional
 y alertas de horarios superpuestos. Los datos se guardan como registros de programación
 con control de revisión y auditoría. Validación: `node scripts/test-schedule.cjs`.
+Un evento puede asignarse a varios ingenieros: aparece en la fila de cada uno y todos reciben su recordatorio.
+Las órdenes de servicio registran también los técnicos que participaron (el responsable siempre incluido);
+se muestran en la tarjeta, el filtro por técnico, el PDF y el correo. Los registros anteriores conservan su técnico único.
 
 Los checklists reciben un consecutivo empresarial anual al guardarse: `26-001`,
 `26-002`, etc., según el año de creación en Colombia; cada año inicia en 001.

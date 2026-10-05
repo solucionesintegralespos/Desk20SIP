@@ -117,18 +117,27 @@ export async function POST(request: Request, { params }: {
                         const ticket = await tx.ticket.findUnique({ where: { id: o.ticketId } });
                         if (!ticket || ticket.customerId !== clientId || user.role !== 'ADMIN' && !(await tx.ticketAssignee.findUnique({ where: { ticketId_userId: { ticketId: ticket.id, userId: user.id } } })))
                             throw new ServiceError('El ticket no corresponde al cliente o responsable');
+                        // A new link must point to a ticket still in progress; an existing link is kept as is.
+                        if (o.ticketId !== (previous as WorkOrder | undefined)?.ticketId && !['OPEN', 'PENDING'].includes(ticket.status))
+                            throw new ServiceError('Solo puedes vincular tickets abiertos o pendientes');
                     }
                     if (o.checklistId) {
                         const checklist = await tx.serviceRecord.findUnique({ where: { id: o.checklistId } });
                         if (!checklist || checklist.kind !== 'checklists' || checklist.clientId !== clientId || user.role !== 'ADMIN' && checklist.techId !== user.id)
                             throw new ServiceError('El checklist no corresponde al cliente o responsable');
                     }
+                    // The responsible technician always takes part; others must be support staff.
+                    if (o.techIds !== undefined && (!Array.isArray(o.techIds) || o.techIds.length > 20 || o.techIds.some(id => !validText(id, 100))))
+                        throw new ServiceError('Técnicos inválidos');
+                    const techIds = Array.from(new Set([techId as string, ...(o.techIds || [])]));
+                    if (await tx.user.count({ where: { id: { in: techIds }, role: { in: ['ADMIN', 'AGENT'] } } }) !== techIds.length)
+                        throw new ServiceError('Selecciona técnicos válidos');
                     const serviceTime = o.startTime === undefined ? (previous as WorkOrder | undefined)?.startTime || now : o.startTime;
                     if (!validText(serviceTime, 100) || !Number.isFinite(Date.parse(serviceTime)))
                         throw new ServiceError('Selecciona una fecha y hora del servicio válidas');
                     if (o.status === 'completed' && Date.parse(serviceTime) > Date.parse(now))
                         throw new ServiceError('La fecha del servicio no puede ser futura al completar la orden');
-                    payload = { id: o.id, createdById: createdById || user.id, number: generatedNumber, clientId, techId, serviceName: o.serviceName.trim(), status: o.status, ticketId: o.ticketId || undefined, checklistId: o.checklistId || undefined, startTime: new Date(serviceTime).toISOString(), diagnosis: o.diagnosis, workDone: o.workDone, observations: o.observations, signerName: o.signerName, consent: o.consent, signature: o.signature || undefined, endTime: o.status === 'completed' ? now : undefined, signedAt: o.status === 'completed' ? now : undefined };
+                    payload = { id: o.id, createdById: createdById || user.id, number: generatedNumber, clientId, techId, techIds, serviceName: o.serviceName.trim(), status: o.status, ticketId: o.ticketId || undefined, checklistId: o.checklistId || undefined, startTime: new Date(serviceTime).toISOString(), diagnosis: o.diagnosis, workDone: o.workDone, observations: o.observations, signerName: o.signerName, consent: o.consent, signature: o.signature || undefined, endTime: o.status === 'completed' ? now : undefined, signedAt: o.status === 'completed' ? now : undefined };
                     try {
                         validateOrder(payload);
                     }

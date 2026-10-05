@@ -1,3 +1,6 @@
+// Orders saved before multiple technicians only have techId.
+export const orderTechIds = (order: { techId: string; techIds?: string[] }) => order.techIds?.length ? order.techIds : [order.techId];
+
 export function serviceDate(value?: string) {
   if (!value || !Number.isFinite(Date.parse(value))) return 'Sin fecha registrada';
   return new Intl.DateTimeFormat('es-CO', {

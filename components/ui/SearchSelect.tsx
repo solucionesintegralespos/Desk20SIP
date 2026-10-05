@@ -6,7 +6,7 @@ import { searchText, type SearchOption } from '@/components/support/SearchFilter
 export const byLabel = (a: SearchOption, b: SearchOption) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base', numeric: true })
 
 // Required single choice with type-ahead search; options are shown alphabetically.
-export function SearchSelect({ options, value, onChange, placeholder = 'Buscarâ€¦', emptyOption, disabled, id: inputId, 'aria-label': ariaLabel, className = '' }: {
+export function SearchSelect({ options, value, onChange, placeholder = 'Buscarâ€¦', emptyOption, disabled, invalid, id: inputId, 'aria-label': ariaLabel, className = '' }: {
   options: SearchOption[]
   value: string
   onChange: (id: string) => void
@@ -14,6 +14,7 @@ export function SearchSelect({ options, value, onChange, placeholder = 'Buscarâ€
   /** Adds a first option that clears the selection, e.g. "Sin cliente". */
   emptyOption?: string
   disabled?: boolean
+  invalid?: boolean
   id?: string
   'aria-label'?: string
   className?: string
@@ -43,7 +44,7 @@ export function SearchSelect({ options, value, onChange, placeholder = 'Buscarâ€
   return <div className={`relative min-w-0 ${className}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) close() }}>
     <input id={id} ref={input} role="combobox" aria-label={ariaLabel} aria-autocomplete="list" aria-expanded={open} aria-controls={`${id}-options`}
       aria-activedescendant={open && active >= 0 && matches[active] ? `${id}-option-${active}` : undefined}
-      autoComplete="off" disabled={disabled}
+      autoComplete="off" disabled={disabled} aria-invalid={invalid || undefined}
       // While searching the box is empty and the current choice stays visible as the placeholder.
       value={open ? query : selected?.label || (value === '' && emptyOption ? emptyOption : '')}
       placeholder={open ? selected?.label || placeholder : placeholder}

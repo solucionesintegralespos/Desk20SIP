@@ -83,6 +83,10 @@
 .service-dialog .field {display:flex;flex-direction:column;gap:.5rem;font-size:.875rem;}
 .service-dialog .form-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;}
 .service-dialog .check-row {border:1px solid #e5e7eb;border-radius:.5rem;padding:1rem;}
+.service-dialog [aria-invalid="true"]:not([type="checkbox"]) {border-color:#dc2626!important;box-shadow:0 0 0 1px #dc2626;}
+.service-dialog .check-invalid input[type="checkbox"] {outline:2px solid #dc2626;outline-offset:2px;}
+.service-dialog .field-error {font-size:.75rem;font-weight:500;color:#b91c1c;}
+[data-theme="dark"] .service-dialog .field-error {color:#fca5a5;}
 @media(max-width:640px){
  .service-dialog .form-grid {grid-template-columns:1fr;}
  .service-dialog input, .service-dialog select, .service-dialog textarea {font-size:16px;}

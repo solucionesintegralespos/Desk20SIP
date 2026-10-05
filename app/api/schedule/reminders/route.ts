@@ -4,7 +4,7 @@ import { serviceDay } from '@/lib/support/order-display';
 import { scheduledAt, type ScheduleEvent } from '@/lib/schedule';
 
 export const dynamic = 'force-dynamic';
-// Planned tasks of the signed-in engineer for today and tomorrow (Bogotá dates).
+// Planned tasks assigned to the signed-in engineer for today and tomorrow (Bogotá dates).
 // The browser compares the returned instants with its clock between polls.
 export async function GET() {
   try {
@@ -12,7 +12,9 @@ export async function GET() {
     const now = new Date();
     const dates = [serviceDay(now.toISOString()), serviceDay(new Date(now.getTime() + 86400000).toISOString())];
     const records = await prisma.serviceRecord.findMany({
-      where: { kind: 'schedule', techId: user.id, AND: [
+      where: { kind: 'schedule', AND: [
+        // Primary engineer (column) or any additional engineer listed in the event.
+        { OR: [{ techId: user.id }, { payload: { path: ['techIds'], array_contains: [user.id] } }] },
         { payload: { path: ['status'], equals: 'planned' } },
         { OR: dates.map(date => ({ payload: { path: ['date'], equals: date } })) },
       ] },

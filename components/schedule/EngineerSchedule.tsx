@@ -9,7 +9,8 @@ import { Avatar } from '@/components/ui/Avatar';
 import { searchText } from '@/components/support/SearchFilter';
 import { colombiaHolidays } from '@/lib/colombia-holidays';
 import { serviceDay } from '@/lib/support/order-display';
-import { eventSchema, statusLabels, timeLabel, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
+import { eventSchema, eventTechIds, statusLabels, timeLabel, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
+import TechnicianPicker from '@/components/tickets/TechnicianPicker';
 import { SCHEDULE_CHANGED } from '@/components/reminders/TaskReminders';
 import { SearchSelect } from '@/components/ui/SearchSelect';
 
@@ -64,18 +65,18 @@ export default function EngineerSchedule() {
     openedEvent.current = requestedEvent;
     setEngineer(''); setStatus(''); setQuery('');
     if (new Date(event.date + 'T12:00:00Z').getUTCDay() % 6 === 0) setWeekend(true);
-    setWeek(monday(event.date)); setFormError(''); setDeleting(false); setDraft({ ...event });
+    setWeek(monday(event.date)); setFormError(''); setDeleting(false); setDraft({ ...event, techIds: eventTechIds(event) });
     router.replace('/dashboard/schedule', { scroll: false });
   }, [loading, requestedEvent, data.events, router]);
   const days = Array.from({ length: weekend ? 7 : 5 }, (_, index) => addDays(week, index));
   const holidays = new Map(Array.from(new Set(days.map(day => Number(day.slice(0, 4))))).flatMap(year => Array.from(colombiaHolidays(year))));
   const clients = new Map(data.clients.map(client => [client.id, client]));
   const engineers = data.engineers.filter(person => !engineer || person.id === engineer);
-  const weekEvents = data.events.filter(event => days.includes(event.date) && (!engineer || event.techId === engineer));
+  const weekEvents = data.events.filter(event => days.includes(event.date) && (!engineer || eventTechIds(event).includes(engineer)));
   const visibleEvents = weekEvents.filter(event => (!status || event.status === status) && searchText(`${event.title} ${event.description} ${name(clients.get(event.clientId || ''))}`).includes(searchText(query)));
   function open(event?: ScheduleEvent, techId = engineer || data.engineers[0]?.id || '', date = week) {
     setFormError(''); setDeleting(false);
-    setDraft(event ? { ...event } : { title: '', techId, clientId: null, date, start: '08:00', status: 'planned', description: '' });
+    setDraft(event ? { ...event, techIds: eventTechIds(event) } : { title: '', techId, techIds: techId ? [techId] : [], clientId: null, date, start: '08:00', status: 'planned', description: '' });
   }
   async function persist(remove = false) {
     if (!draft) return;
@@ -108,12 +109,12 @@ export default function EngineerSchedule() {
     </div>
     <div className="flex justify-between items-center flex-wrap gap-2 mb-3 text-xs text-slate-500"><div className="flex gap-3 flex-wrap">{Object.entries(statusLabels).map(([value, label]) => <span key={value} className="flex items-center gap-1"><span className={`schedule-dot schedule-${value}`} />{label}</span>)}<span className="flex items-center gap-1"><span className="schedule-dot schedule-holiday-key" />Festivo de Colombia</span></div><span>{visibleEvents.length} eventos · Eventos de la semana seleccionada</span>{(query || status || engineer) && <Button size="sm" variant="ghost" onClick={() => { setEngineer(''); setStatus(''); setQuery(''); }}>Limpiar filtros</Button>}</div>
     {error ? <div role="alert" className="bg-red-50 text-red-700 border border-red-200 p-4 rounded-lg">{error}<Button variant="outline" className="ml-3" onClick={() => void load()}>Reintentar</Button></div> : loading ? <p role="status" className="p-8 text-center">Cargando programación…</p> : <>
-      <div className="schedule-scroll"><table className="schedule-table"><caption className="sr-only">Programación semanal de ingenieros</caption><thead><tr><th scope="col" className="schedule-person">Ingenieros</th>{days.map(day => <th scope="col" key={day} className={[day === serviceDay(new Date().toISOString()) ? 'schedule-today' : '', holidays.has(day) ? 'schedule-holiday' : ''].join(' ')}>{dateLabel(day, { weekday: 'long', day: 'numeric' })}{holidays.has(day) && <span className="schedule-holiday-name">Festivo · {holidays.get(day)}</span>}</th>)}</tr><tr className="schedule-totals"><th className="schedule-person" scope="row">EVENTOS PROGRAMADOS</th>{days.map(day => <td key={day} className={holidays.has(day) ? 'schedule-holiday' : undefined}>{visibleEvents.filter(event => event.date === day).length}</td>)}</tr></thead><tbody>{engineers.map(person => <tr key={person.id}><th scope="row" className="schedule-person"><div className="flex gap-2 items-center"><Avatar src={person.avatar} alt={name(person)} fallback={name(person)} size="lg" className="h-16 w-16 shrink-0 text-2xl" /><span className="min-w-0 line-clamp-3" title={name(person)}>{name(person)}</span></div><p className="text-xs text-slate-500 font-normal mt-2">{visibleEvents.filter(event => event.techId === person.id).length} eventos</p></th>{days.map(day => {
-        const events = visibleEvents.filter(event => event.techId === person.id && event.date === day).sort((a, b) => a.start.localeCompare(b.start));
-        const allEvents = weekEvents.filter(event => event.techId === person.id && event.date === day);
+      <div className="schedule-scroll"><table className="schedule-table"><caption className="sr-only">Programación semanal de ingenieros</caption><thead><tr><th scope="col" className="schedule-person">Ingenieros</th>{days.map(day => <th scope="col" key={day} className={[day === serviceDay(new Date().toISOString()) ? 'schedule-today' : '', holidays.has(day) ? 'schedule-holiday' : ''].join(' ')}>{dateLabel(day, { weekday: 'long', day: 'numeric' })}{holidays.has(day) && <span className="schedule-holiday-name">Festivo · {holidays.get(day)}</span>}</th>)}</tr><tr className="schedule-totals"><th className="schedule-person" scope="row">EVENTOS PROGRAMADOS</th>{days.map(day => <td key={day} className={holidays.has(day) ? 'schedule-holiday' : undefined}>{visibleEvents.filter(event => event.date === day).length}</td>)}</tr></thead><tbody>{engineers.map(person => <tr key={person.id}><th scope="row" className="schedule-person"><div className="flex gap-2 items-center"><Avatar src={person.avatar} alt={name(person)} fallback={name(person)} size="lg" className="h-16 w-16 shrink-0 text-2xl" /><span className="min-w-0 line-clamp-3" title={name(person)}>{name(person)}</span></div><p className="text-xs text-slate-500 font-normal mt-2">{visibleEvents.filter(event => eventTechIds(event).includes(person.id)).length} eventos</p></th>{days.map(day => {
+        const events = visibleEvents.filter(event => eventTechIds(event).includes(person.id) && event.date === day).sort((a, b) => a.start.localeCompare(b.start));
+        const allEvents = weekEvents.filter(event => eventTechIds(event).includes(person.id) && event.date === day);
         return <td key={day} className={holidays.has(day) ? 'schedule-holiday' : undefined}><div className="schedule-cell">{events.map(event => {
           const overlap = allEvents.some(other => other.id !== event.id && other.start === event.start);
-          return <button key={event.id} type="button" onClick={() => open(event)} className={`schedule-event schedule-${event.status}`}><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span><span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span></button>;
+          return <button key={event.id} type="button" onClick={() => open(event)} className={`schedule-event schedule-${event.status}`}><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span>{eventTechIds(event).length > 1 && <span className="block text-[10px] mt-1" title={eventTechIds(event).map(id => name(data.engineers.find(person => person.id === id))).join(', ')}>Compartido · {eventTechIds(event).length} ingenieros</span>}<span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span></button>;
         })}{!events.length && <p className="schedule-empty">{allEvents.length ? 'Sin coincidencias' : 'Sin programación'}</p>}<button type="button" className="schedule-add" aria-label={`Añadir evento para ${name(person)} el ${day}`} onClick={() => open(undefined, person.id, day)}><Plus size={12} />Añadir</button></div></td>;
       })}</tr>)}</tbody></table></div>
       {!engineers.length && <p className="p-8 text-center text-slate-500">No hay ingenieros para mostrar.</p>}
@@ -121,7 +122,8 @@ export default function EngineerSchedule() {
     </>}
     <Dialog open={!!draft} onOpenChange={value => { if (!value && !busy) setDraft(null); }}><DialogContent><DialogHeader><DialogTitle>{draft?.id ? 'Detalle del evento' : 'Nuevo evento'}</DialogTitle><DialogDescription>Programa una actividad para un ingeniero y un día.</DialogDescription></DialogHeader>{draft && <form onSubmit={event => { event.preventDefault(); void persist(); }} className="detail-stack"><fieldset disabled={busy} className="detail-stack">
       <Field label="Tarea"><Input required maxLength={160} value={draft.title} onChange={event => patch({ title: event.target.value })} /></Field>
-      <div className="form-grid"><Field label="Ingeniero"><select required className="border rounded-lg p-2" value={draft.techId} onChange={event => patch({ techId: event.target.value })}>{data.engineers.map(person => <option key={person.id} value={person.id}>{name(person)}</option>)}</select></Field><Field label="Cliente"><SearchSelect aria-label="Cliente" placeholder="Buscar cliente…" emptyOption="Sin cliente / actividad interna" value={draft.clientId || ''} onChange={clientId => patch({ clientId: clientId || null })} options={data.clients.map(person => ({ id: person.id, label: name(person), description: person.name ? person.email || undefined : undefined }))} /></Field></div>
+      <TechnicianPicker label="Ingenieros asignados" agents={data.engineers} value={draft.techIds || []} onChange={techIds => patch({ techIds, techId: techIds[0] || '' })} />
+      <div><Field label="Cliente"><SearchSelect aria-label="Cliente" placeholder="Buscar cliente…" emptyOption="Sin cliente / actividad interna" value={draft.clientId || ''} onChange={clientId => patch({ clientId: clientId || null })} options={data.clients.map(person => ({ id: person.id, label: name(person), description: person.name ? person.email || undefined : undefined }))} /></Field></div>
       <div className="form-grid"><Field label="Fecha"><Input required type="date" value={draft.date} onChange={event => patch({ date: event.target.value })} /></Field><Field label="Estado"><select className="border rounded-lg p-2" value={draft.status} onChange={event => patch({ status: event.target.value as Draft['status'] })}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field></div>
       <Field label="Hora inicial"><Input required type="time" value={draft.start} onChange={event => patch({ start: event.target.value })} /></Field>
       <Field label="Descripción"><Textarea rows={3} maxLength={5000} value={draft.description} onChange={event => patch({ description: event.target.value })} /></Field>
