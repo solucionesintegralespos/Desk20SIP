@@ -141,7 +141,7 @@ export default function PublicTicketForm({ customerId, publicToken, categories, 
 
         <label className="block text-sm font-medium">Tipo *<select required value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })} className="block w-full border rounded-lg p-2 mt-2"><option value="">Seleccionar tipo...</option><option value="INCIDENT">Incidente</option><option value="CHANGE_REQUEST">Solicitud de cambio</option><option value="PROJECT">Proyecto</option></select></label>
         <label className="block text-sm font-medium">Categoría *<select required value={formData.categoryId} onChange={e => setFormData({ ...formData, categoryId: e.target.value })} className="block w-full border rounded-lg p-2 mt-2"><option value="">Seleccionar categoría...</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <TechnicianPicker agents={agents} value={formData.assigneeIds} onChange={assigneeIds => setFormData({ ...formData, assigneeIds })} disabled={loading} />
+        <TechnicianPicker agents={agents} value={formData.assigneeIds} onChange={assigneeIds => setFormData({ ...formData, assigneeIds })} disabled={loading} selectAll={false} />
         <div className="flex justify-end pt-4 border-t">
           <button
             type="submit"

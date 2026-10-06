@@ -88,6 +88,10 @@
 .service-module .status.completed {background:#eff8e6;color:#23742c;}
 .service-module .subtle {font-size:.8rem;color:#6b7280;}
 .service-dialog .detail-stack {display:flex;flex-direction:column;gap:1rem;}
+/* Fieldsets default to min-inline-size:min-content, so one long value (e.g. many technician
+   names) widened the whole form past the dialog. Let them shrink and keep the dialog vertical-only. */
+.service-dialog fieldset {min-width:0;}
+.service-dialog {overflow-x:hidden;}
 .service-dialog {max-height:calc(100dvh - 2rem);overflow-y:auto;overscroll-behavior:contain;}
 .service-dialog .field {display:flex;flex-direction:column;gap:.5rem;font-size:.875rem;}
 .service-dialog .form-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;}
