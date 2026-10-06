@@ -27,6 +27,12 @@ fecha, horario, descripción y estado. Incluye vacaciones, filtros, fin de seman
 y alertas de horarios superpuestos. Los datos se guardan como registros de programación
 con control de revisión y auditoría. Validación: `node scripts/test-schedule.cjs`.
 Un evento puede asignarse a varios ingenieros: aparece en la fila de cada uno y todos reciben su recordatorio.
+Estados adicionales: Permiso y Cita médica. El botón «Listo» de la semana marca como completado un evento
+programado o en proceso. Al crear un evento, la pestaña «Repetir» lo replica cada semana (día elegido) o cada
+mes (mismo día) hasta el 31 de diciembre; se omiten las fechas en que alguno de sus ingenieros ya tiene un evento
+a esa hora o está de vacaciones, y los meses sin ese día. «Guardar y crear ticket» guarda el evento y abre el
+formulario de ticket con su asunto, descripción, cliente e ingenieros. Validación: `npm run test:schedule-repeat`.
+Reportes incluye al final los tickets creados en el mes por cliente, con su estado actual.
 Las órdenes de servicio registran también los técnicos que participaron (el responsable siempre incluido);
 se muestran en la tarjeta, el filtro por técnico, el PDF y el correo. Los registros anteriores conservan su técnico único.
 

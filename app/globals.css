@@ -19,12 +19,21 @@
 .schedule-cell {display:flex;flex-direction:column;gap:6px;padding:6px;min-height:140px;}
 .schedule-event {text-align:left;border:1px solid transparent;padding:9px;border-radius:6px;font-size:11px;overflow-wrap:anywhere;transition:filter .15s;}
 .schedule-event:hover {filter:brightness(.96);}
-.schedule-event:focus-visible,.schedule-add:focus-visible {outline:2px solid #063d92;outline-offset:2px;}
+.schedule-event-open:focus-visible,.schedule-done:focus-visible,.schedule-add:focus-visible,.schedule-tabs [role="tab"]:focus-visible {outline:2px solid #063d92;outline-offset:2px;}
 .schedule-planned {background:#fef08a;color:#713f12;border-color:#fde047;}
 .schedule-in_progress {background:#dbeafe;color:#1e40af;border-color:#93c5fd;}
 .schedule-completed {background:#dcfce7;color:#166534;border-color:#86efac;}
 .schedule-vacation {background:#fee2e2;color:#991b1b;border-color:#fca5a5;}
 .schedule-available {background:#ede9fe;color:#5b21b6;border-color:#c4b5fd;}
+.schedule-permission {background:#ccfbf1;color:#115e59;border-color:#5eead4;}
+.schedule-medical {background:#fce7f3;color:#9d174d;border-color:#f9a8d4;}
+.schedule-event-open {display:block;width:100%;text-align:left;}
+.schedule-done {display:inline-flex;align-items:center;gap:3px;margin-top:7px;padding:2px 8px;border-radius:999px;border:1px solid currentColor;background:#ffffffb3;font-size:10px;font-weight:600;}
+.schedule-done:hover {background:#fff;}
+.schedule-done:disabled {opacity:.6;}
+.schedule-tabs {display:flex;gap:.25rem;border-bottom:1px solid #e2e8f0;}
+.schedule-tabs [role="tab"] {padding:.5rem .875rem;font-size:.875rem;font-weight:500;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.schedule-tabs [role="tab"][aria-selected="true"] {color:#063d92;border-bottom-color:#063d92;}
 .schedule-dot {width:9px;height:9px;border-radius:50%;border-width:1px;}
 .schedule-empty {padding:7px 4px;background:#f0fdf4;color:#527960;border-radius:5px;text-align:center;font-size:10px;}
 .schedule-add {display:flex;align-items:center;justify-content:center;gap:4px;border:1px dashed #cbd5e1;color:#64748b;border-radius:5px;padding:4px;margin-top:auto;font-size:10px;}
@@ -158,6 +167,12 @@
   [data-theme="dark"] :is(.schedule-completed,.service-module .status.completed) {background:#163e32;color:#a7f3d0;border-color:#42876c;}
   [data-theme="dark"] .schedule-vacation {background:#4c222c;color:#fecdd3;border-color:#a6586b;}
   [data-theme="dark"] .schedule-available {background:#392652;color:#ddd6fe;border-color:#8966bc;}
+  [data-theme="dark"] .schedule-permission {background:#123d39;color:#99f6e4;border-color:#2f8f84;}
+  [data-theme="dark"] .schedule-medical {background:#4a1d35;color:#fbcfe8;border-color:#a8507d;}
+  [data-theme="dark"] .schedule-done {background:#0f172a99;}
+  [data-theme="dark"] .schedule-tabs {border-color:#475569;}
+  [data-theme="dark"] .schedule-tabs [role="tab"] {color:#aebed1;}
+  [data-theme="dark"] .schedule-tabs [role="tab"][aria-selected="true"] {color:#93c5fd;border-bottom-color:#93c5fd;}
   [data-theme="dark"] .schedule-empty {background:#20372f;color:#add9c3;}
   [data-theme="dark"] .schedule-add {border-color:#64748b;color:#cbd5e1;}
   [data-theme="dark"] .schedule-add:hover {background:#334155;}

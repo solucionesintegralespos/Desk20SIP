@@ -26,9 +26,11 @@ interface CreateTicketFormProps {
     role: string
     name?: string | null
   }
+  /** Prefilled values, e.g. when a schedule event is turned into a ticket. */
+  initial?: { subject?: string; description?: string; customerId?: string; assigneeIds?: string[]; source?: string }
 }
 
-export default function CreateTicketForm({ currentUser }: CreateTicketFormProps) {
+export default function CreateTicketForm({ currentUser, initial }: CreateTicketFormProps) {
   const router = useRouter()
   const ticketsListHref = useTicketsListHref()
   const [loading, setLoading] = useState(false)
@@ -37,15 +39,15 @@ export default function CreateTicketForm({ currentUser }: CreateTicketFormProps)
   const [categories, setCategories] = useState<Category[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [formData, setFormData] = useState({
-    customerId: currentUser.role === 'CUSTOMER' ? currentUser.id : '',
-    subject: '',
-    description: '',
+    customerId: currentUser.role === 'CUSTOMER' ? currentUser.id : initial?.customerId || '',
+    subject: initial?.subject || '',
+    description: initial?.description || '',
     priority: '',
     type: '',
     categoryId: '',
     hours: '',
     tags: '',
-    assigneeIds: [] as string[],
+    assigneeIds: initial?.assigneeIds || [] as string[],
   })
   const [attachments, setAttachments] = useState<File[]>([])
   const [agents, setAgents] = useState<Array<{ id: string; name: string | null; email: string | null }>>([])
@@ -248,6 +250,9 @@ export default function CreateTicketForm({ currentUser }: CreateTicketFormProps)
       </div>
 
       <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        {initial?.source && <p role="status" className="rounded-lg border border-primary-100 bg-primary-50 px-4 py-3 text-sm text-primary-700">
+          Datos tomados de {initial.source}. Completa la categoría, el tipo y la prioridad para crear el ticket.
+        </p>}
         {/* The API records the session user as the creator. */}
         <div>
           <label htmlFor="ticket-creator" className="block text-sm font-medium text-gray-700 mb-2">Creado por</label>

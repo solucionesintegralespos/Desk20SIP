@@ -2,20 +2,25 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { Button, Input, Textarea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/support/ui';
 import { Field } from '@/components/support/fields';
 import { Avatar } from '@/components/ui/Avatar';
 import { searchText } from '@/components/support/SearchFilter';
 import { colombiaHolidays } from '@/lib/colombia-holidays';
 import { serviceDay } from '@/lib/support/order-display';
-import { eventSchema, eventTechIds, statusLabels, timeLabel, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
+import { eventSchema, eventTechIds, statusLabels, timeLabel, repeatDates, repeatConflict, weekdayLabels, type RepeatRule, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
 import TechnicianPicker from '@/components/tickets/TechnicianPicker';
 import { SCHEDULE_CHANGED } from '@/components/reminders/TaskReminders';
 import { SearchSelect } from '@/components/ui/SearchSelect';
 
 type Data = { events: ScheduleEvent[]; engineers: SchedulePerson[]; clients: SchedulePerson[] };
 type Draft = Omit<ScheduleEvent, 'id' | 'revision'> & { id?: string; revision?: number };
+type Repeat = { mode: 'none' | 'weekly' | 'monthly'; weekday: number };
+const weekdayOf = (date: string) => new Date(date + 'T12:00:00Z').getUTCDay();
+const toRule = (repeat: Repeat): RepeatRule | null => repeat.mode === 'weekly' ? { mode: 'weekly', weekday: repeat.weekday } : repeat.mode === 'monthly' ? { mode: 'monthly' } : null;
+const shortDate = (date: string) => new Intl.DateTimeFormat('es-CO', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(date + 'T12:00:00Z'));
 const name = (person?: SchedulePerson) => person?.name || person?.email || 'Sin nombre';
 
 function addDays(value: string, days: number) {
@@ -42,6 +47,9 @@ export default function EngineerSchedule() {
   const [formError, setFormError] = useState('');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<'details' | 'repeat'>('details');
+  const [repeat, setRepeat] = useState<Repeat>({ mode: 'none', weekday: 1 });
+  const [completing, setCompleting] = useState<string | null>(null);
   async function load() {
     setLoading(true); setError('');
     try {
@@ -75,26 +83,63 @@ export default function EngineerSchedule() {
   const weekEvents = data.events.filter(event => days.includes(event.date) && (!engineer || eventTechIds(event).includes(engineer)));
   const visibleEvents = weekEvents.filter(event => (!status || event.status === status) && searchText(`${event.title} ${event.description} ${name(clients.get(event.clientId || ''))}`).includes(searchText(query)));
   function open(event?: ScheduleEvent, techId = engineer || data.engineers[0]?.id || '', date = week) {
-    setFormError(''); setDeleting(false);
+    setFormError(''); setDeleting(false); setTab('details');
+    setRepeat({ mode: 'none', weekday: weekdayOf(event?.date || date) });
     setDraft(event ? { ...event, techIds: eventTechIds(event) } : { title: '', techId, techIds: techId ? [techId] : [], clientId: null, date, start: '08:00', status: 'planned', description: '' });
   }
-  async function persist(remove = false) {
-    if (!draft) return;
+  async function persist(remove = false): Promise<boolean> {
+    if (!draft) return false;
     if (!remove) {
       const parsed = eventSchema.safeParse(draft);
-      if (!parsed.success) { setFormError(parsed.error.issues[0].message); return; }
+      if (!parsed.success) { setFormError(parsed.error.issues[0].message); return false; }
     }
     setBusy(true); setFormError('');
+    const rule = !remove && !draft.id ? toRule(repeat) : null;
     try {
-      const response = await fetch('/api/schedule', { method: remove ? 'DELETE' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) });
+      const response = await fetch('/api/schedule', { method: remove ? 'DELETE' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rule ? { ...draft, repeat: rule } : draft) });
       const result = await response.json();
       if (!response.ok) throw Error(result.error || 'No se pudo guardar');
+      if (rule) {
+        const skipped = result.skipped as { date: string }[];
+        toast.success(`Se crearon ${result.created.length} eventos${skipped.length ? `; se omitieron ${skipped.length} fechas con otro evento a la misma hora o vacaciones` : ''}.`, { duration: 8000 });
+      }
       setDraft(null); await load();
       window.dispatchEvent(new Event(SCHEDULE_CHANGED));
-    } catch (error) { setFormError((error as Error).message); }
+      return true;
+    } catch (error) { setFormError((error as Error).message); return false; }
     finally { setBusy(false); }
   }
+  // Saves the event, then opens the ticket form prefilled with its data; category, type
+  // and priority are completed there and the usual ticket validation applies.
+  async function saveAsTicket() {
+    if (!draft?.clientId) return;
+    const event = draft;
+    if (!await persist()) return;
+    const when = `${shortDate(event.date)}, ${timeLabel(event.start)}`;
+    const params = new URLSearchParams({
+      subject: event.title, customerId: event.clientId!, assignees: (event.techIds || [event.techId]).join(','), source: `el evento «${event.title}»`,
+      description: [event.description.slice(0, 1500), `Evento programado: ${when} (hora de Colombia).`].filter(Boolean).join('\n\n'),
+    });
+    router.push(`/dashboard/tickets/new?${params}`);
+  }
   const patch = (value: Partial<Draft>) => setDraft(current => current && ({ ...current, ...value }));
+  // "Listo" on the weekly grid: mark the task completed without opening it.
+  async function complete(event: ScheduleEvent) {
+    setCompleting(event.id);
+    try {
+      const response = await fetch('/api/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...event, techIds: eventTechIds(event), status: 'completed' }) });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error || 'No se pudo completar la tarea');
+      toast.success(`«${event.title}» marcada como completada`);
+      await load();
+      window.dispatchEvent(new Event(SCHEDULE_CHANGED));
+    } catch (error) { toast.error((error as Error).message); }
+    finally { setCompleting(null); }
+  }
+  // Preview of a repeated event, computed with the same rules the server applies.
+  const rule = draft && !draft.id ? toRule(repeat) : null;
+  const preview = draft && rule ? repeatDates(draft.date, rule).map(date => ({ date, reason: repeatConflict(data.events, date, draft.start, draft.techIds || []) })) : [];
+  const skippedPreview = preview.filter(item => item.reason);
 
   return <div className="h-full overflow-auto p-4 lg:p-6 service-module">
     <div className="page-heading items-center"><div><p className="eyebrow">EQUIPO TÉCNICO</p><h1 className="flex items-center gap-3"><CalendarDays className="text-primary-600" />Programación de ingenieros</h1><p className="text-sm text-slate-500 mt-1">Organiza las visitas, tareas y ausencias del equipo.</p></div><Button disabled={loading || !!error || !data.engineers.length} onClick={() => open()}><Plus size={16} />Nuevo evento</Button></div>
@@ -114,21 +159,42 @@ export default function EngineerSchedule() {
         const allEvents = weekEvents.filter(event => eventTechIds(event).includes(person.id) && event.date === day);
         return <td key={day} className={holidays.has(day) ? 'schedule-holiday' : undefined}><div className="schedule-cell">{events.map(event => {
           const overlap = allEvents.some(other => other.id !== event.id && other.start === event.start);
-          return <button key={event.id} type="button" onClick={() => open(event)} className={`schedule-event schedule-${event.status}`}><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span>{eventTechIds(event).length > 1 && <span className="block text-[10px] mt-1" title={eventTechIds(event).map(id => name(data.engineers.find(person => person.id === id))).join(', ')}>Compartido · {eventTechIds(event).length} ingenieros</span>}<span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span></button>;
+          const pending = event.status === 'planned' || event.status === 'in_progress';
+          return <div key={event.id} className={`schedule-event schedule-${event.status}`}><button type="button" onClick={() => open(event)} className="schedule-event-open"><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span>{eventTechIds(event).length > 1 && <span className="block text-[10px] mt-1" title={eventTechIds(event).map(id => name(data.engineers.find(person => person.id === id))).join(', ')}>Compartido · {eventTechIds(event).length} ingenieros</span>}<span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span></button>{pending && <button type="button" className="schedule-done" disabled={completing === event.id} onClick={() => void complete(event)} aria-label={`Marcar «${event.title}» como completada`}><Check size={11} aria-hidden="true" />{completing === event.id ? 'Guardando…' : 'Listo'}</button>}</div>;
         })}{!events.length && <p className="schedule-empty">{allEvents.length ? 'Sin coincidencias' : 'Sin programación'}</p>}<button type="button" className="schedule-add" aria-label={`Añadir evento para ${name(person)} el ${day}`} onClick={() => open(undefined, person.id, day)}><Plus size={12} />Añadir</button></div></td>;
       })}</tr>)}</tbody></table></div>
       {!engineers.length && <p className="p-8 text-center text-slate-500">No hay ingenieros para mostrar.</p>}
       <p className="text-xs text-slate-500 mt-3">Horario de Colombia. Los eventos con la misma hora de inicio se señalan en la programación.</p>
     </>}
-    <Dialog open={!!draft} onOpenChange={value => { if (!value && !busy) setDraft(null); }}><DialogContent><DialogHeader><DialogTitle>{draft?.id ? 'Detalle del evento' : 'Nuevo evento'}</DialogTitle><DialogDescription>Programa una actividad para un ingeniero y un día.</DialogDescription></DialogHeader>{draft && <form onSubmit={event => { event.preventDefault(); void persist(); }} className="detail-stack"><fieldset disabled={busy} className="detail-stack">
+    <Dialog open={!!draft} onOpenChange={value => { if (!value && !busy) setDraft(null); }}><DialogContent><DialogHeader><DialogTitle>{draft?.id ? 'Detalle del evento' : 'Nuevo evento'}</DialogTitle><DialogDescription>Programa una actividad para un ingeniero y un día.</DialogDescription></DialogHeader>{draft && <form noValidate onSubmit={event => { event.preventDefault(); void persist(); }} className="detail-stack"><fieldset disabled={busy} className="detail-stack">
+      {!draft.id && <div role="tablist" aria-label="Secciones del evento" className="schedule-tabs">
+        {([['details', 'Detalles'], ['repeat', rule ? 'Repetir · activo' : 'Repetir']] as const).map(([value, label]) => <button key={value} type="button" role="tab" id={`schedule-tab-${value}`} aria-selected={tab === value} aria-controls={`schedule-panel-${value}`} onClick={() => setTab(value)}>{label}</button>)}
+      </div>}
+      <div role={draft.id ? undefined : 'tabpanel'} id="schedule-panel-details" aria-labelledby={draft.id ? undefined : 'schedule-tab-details'} hidden={tab !== 'details'} className="detail-stack">
       <Field label="Tarea"><Input required maxLength={160} value={draft.title} onChange={event => patch({ title: event.target.value })} /></Field>
       <TechnicianPicker label="Ingenieros asignados" agents={data.engineers} value={draft.techIds || []} onChange={techIds => patch({ techIds, techId: techIds[0] || '' })} />
       <div><Field label="Cliente"><SearchSelect aria-label="Cliente" placeholder="Buscar cliente…" emptyOption="Sin cliente / actividad interna" value={draft.clientId || ''} onChange={clientId => patch({ clientId: clientId || null })} options={data.clients.map(person => ({ id: person.id, label: name(person), description: person.name ? person.email || undefined : undefined }))} /></Field></div>
       <div className="form-grid"><Field label="Fecha"><Input required type="date" value={draft.date} onChange={event => patch({ date: event.target.value })} /></Field><Field label="Estado"><select className="border rounded-lg p-2" value={draft.status} onChange={event => patch({ status: event.target.value as Draft['status'] })}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field></div>
       <Field label="Hora inicial"><Input required type="time" value={draft.start} onChange={event => patch({ start: event.target.value })} /></Field>
       <Field label="Descripción"><Textarea rows={3} maxLength={5000} value={draft.description} onChange={event => patch({ description: event.target.value })} /></Field>
+      </div>
+      {!draft.id && <div role="tabpanel" id="schedule-panel-repeat" aria-labelledby="schedule-tab-repeat" hidden={tab !== 'repeat'} className="detail-stack">
+        <fieldset className="space-y-3 text-sm"><legend className="font-medium mb-2">Repetir este evento</legend>
+          <label className="flex items-center gap-2"><input type="radio" name="repeat" checked={repeat.mode === 'none'} onChange={() => setRepeat({ ...repeat, mode: 'none' })} />No repetir</label>
+          <label className="flex flex-wrap items-center gap-2"><input type="radio" name="repeat" checked={repeat.mode === 'weekly'} onChange={() => setRepeat({ ...repeat, mode: 'weekly' })} />Cada semana, el
+            <select aria-label="Día de la semana" className="border rounded-lg p-1.5" value={repeat.weekday} onChange={event => setRepeat({ mode: 'weekly', weekday: Number(event.target.value) })}>{weekdayLabels.map((label, index) => <option key={label} value={index}>{label.toLowerCase()}</option>)}</select></label>
+          <label className="flex items-center gap-2"><input type="radio" name="repeat" checked={repeat.mode === 'monthly'} onChange={() => setRepeat({ ...repeat, mode: 'monthly' })} />Cada mes, el día {Number(draft.date.slice(8, 10)) || '—'}</label>
+        </fieldset>
+        {rule && <div className="rounded-lg border border-primary-100 bg-primary-50 p-3 text-sm">
+          <p>Desde el {shortDate(draft.date)} hasta el 31 de diciembre de {draft.date.slice(0, 4)}, a las {timeLabel(draft.start)}: <strong>{preview.length - skippedPreview.length} eventos</strong>.</p>
+          <p className="mt-1 text-xs text-slate-500">Se omiten los días en que alguno de los ingenieros ya tiene un evento a la misma hora o está de vacaciones{rule.mode === 'monthly' ? ', y los meses que no tienen ese día' : ''}.</p>
+          {skippedPreview.length > 0 && <details className="mt-2 text-xs"><summary className="cursor-pointer">{skippedPreview.length} fechas omitidas</summary><ul className="mt-1 max-h-32 overflow-y-auto">{skippedPreview.map(item => <li key={item.date}>{shortDate(item.date)} · {item.reason === 'vacation' ? 'vacaciones' : 'otro evento a la misma hora'}</li>)}</ul></details>}
+          {!preview.length && <p className="mt-1 text-xs">No hay fechas para repetir antes de fin de año.</p>}
+        </div>}
+      </div>}
       {formError && <p role="alert" className="text-red-700 text-sm">{formError}</p>}
-      {deleting ? <div className="bg-red-50 p-3 rounded-lg"><p className="text-sm mb-2">¿Eliminar este evento de la programación?</p><div className="flex gap-2"><Button variant="outline" onClick={() => setDeleting(false)}>Cancelar</Button><Button onClick={() => void persist(true)}>Confirmar eliminación</Button></div></div> : <div className="flex justify-between gap-2 flex-wrap"><Button type="submit">{busy ? 'Guardando…' : 'Guardar cambios'}</Button>{draft.id && <Button variant="ghost" className="text-red-700" onClick={() => setDeleting(true)}>Eliminar evento</Button>}</div>}
+      {deleting ? <div className="bg-red-50 p-3 rounded-lg"><p className="text-sm mb-2">¿Eliminar este evento de la programación?</p><div className="flex gap-2"><Button variant="outline" onClick={() => setDeleting(false)}>Cancelar</Button><Button onClick={() => void persist(true)}>Confirmar eliminación</Button></div></div> : <div className="flex justify-between gap-2 flex-wrap"><div className="flex flex-wrap gap-2"><Button type="submit">{busy ? 'Guardando…' : rule ? `Crear ${preview.length - skippedPreview.length} eventos` : 'Guardar cambios'}</Button>
+        {!rule && <Button variant="outline" disabled={!draft.clientId} onClick={() => void saveAsTicket()} title={draft.clientId ? 'Guarda el evento y abre un ticket con sus datos' : 'Selecciona un cliente para crear el ticket'}>Guardar y crear ticket</Button>}</div>{draft.id && <Button variant="ghost" className="text-red-700" onClick={() => setDeleting(true)}>Eliminar evento</Button>}</div>}
     </fieldset></form>}</DialogContent></Dialog>
   </div>;
 }

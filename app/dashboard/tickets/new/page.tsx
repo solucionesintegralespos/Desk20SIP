@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import CreateTicketForm from '@/components/tickets/CreateTicketForm'
 
-export default async function NewTicketPage() {
+export default async function NewTicketPage({ searchParams }: { searchParams: { subject?: string; description?: string; customerId?: string; assignees?: string; source?: string } }) {
   const session = await getDashboardSession()
 
   if (!session) {
@@ -34,7 +34,11 @@ export default async function NewTicketPage() {
             <p className="text-gray-600 mt-1">Completa el formulario para crear un ticket de soporte</p>
           </div>
 
-          <CreateTicketForm currentUser={{ id: user.id, role: user.role, name: user.name || user.email }} />
+          <CreateTicketForm currentUser={{ id: user.id, role: user.role, name: user.name || user.email }} initial={user.role === 'CUSTOMER' ? undefined : {
+            // Prefill from a schedule event; the API validates every value on submit.
+            subject: searchParams.subject?.slice(0, 200), description: searchParams.description?.slice(0, 5000), customerId: searchParams.customerId,
+            assigneeIds: searchParams.assignees?.split(',').filter(Boolean).slice(0, 20), source: searchParams.source?.slice(0, 200),
+          }} />
         </div>
       </div></>
   )

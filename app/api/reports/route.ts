@@ -37,7 +37,7 @@ export async function GET(request: Request) {
         ${technician ? Prisma.sql`AND "enteredById" = ${technician}` : Prisma.empty}
       GROUP BY 1, 2`
     const [entries, closures, open, pending, monthlyRows] = await Promise.all([
-      prisma.ticket.findMany({ where: { ...categoryWhere, createdAt: period, ...(technician ? { enteredById: technician } : {}) }, select: { enteredById: true, createdAt: true, categoryId: true } }),
+      prisma.ticket.findMany({ where: { ...categoryWhere, createdAt: period, ...(technician ? { enteredById: technician } : {}) }, select: { enteredById: true, createdAt: true, categoryId: true, customerId: true, status: true } }),
       prisma.ticket.findMany({ where: { ...categoryWhere, status: 'CLOSED', closedAt: period, ...(technician ? { closedById: technician } : {}) }, select: { closedById: true, closedAt: true } }),
       prisma.ticket.count({ where: { ...categoryWhere, ...assigned, status: 'OPEN' } }),
       prisma.ticket.count({ where: { ...categoryWhere, ...assigned, status: 'PENDING' } }),
@@ -59,7 +59,20 @@ export async function GET(request: Request) {
       activity[Number(serviceDay(t.closedAt!.toISOString()).slice(-2)) - 1].closed++
       if (t.closedById) closureCounts.set(t.closedById, (closureCounts.get(t.closedById) || 0) + 1)
     }
-    return NextResponse.json({ month, label: range.label, technician, category, technicians, categories,
+    // Tickets created in the month per client, split by their current status.
+    const clientCounts = new Map<string, { total: number; open: number; pending: number; closed: number }>()
+    for (const t of entries) {
+      const row = clientCounts.get(t.customerId) || { total: 0, open: 0, pending: 0, closed: 0 }
+      row.total++
+      if (t.status === 'OPEN') row.open++; else if (t.status === 'PENDING') row.pending++; else row.closed++
+      clientCounts.set(t.customerId, row)
+    }
+    const clientNames = clientCounts.size ? await prisma.user.findMany({ where: { id: { in: Array.from(clientCounts.keys()) } }, select: { id: true, name: true, email: true } }) : []
+    const byClient = Array.from(clientCounts, ([id, counts]) => {
+      const client = clientNames.find(c => c.id === id)
+      return { id, name: client?.name || client?.email || 'Cliente', email: client?.name ? client.email : null, ...counts }
+    }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'es'))
+    return NextResponse.json({ month, label: range.label, byClient, technician, category, technicians, categories,
       summary: { entered: entries.length, closed: closures.length, open, pending },
       unattributed: entries.filter(t => !t.enteredById).length,
       rows: technicians.filter(t => !technician || t.id === technician).map(t => ({ id: t.id, name: t.name || t.email || 'Usuario', avatar: t.avatar, entered: entryCounts.get(t.id) || 0, closed: closureCounts.get(t.id) || 0, entryGoal: t.dailyEntryGoal, closureGoal: t.dailyClosureGoal })),

@@ -11,6 +11,7 @@ type Report = {
   technicians: { id: string; name: string | null; email: string | null }[]; categories: { id: string; name: string }[];
   rows: Row[]; activity: { day: string; entered: number; closed: number }[]; byCategory: { name: string; count: number }[]
   monthly: { years: number[]; rows: Array<{ month: number } & Record<string, number | null>> }
+  byClient: { id: string; name: string; email: string | null; total: number; open: number; pending: number; closed: number }[]
 }
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 // Validated categorical order. The color follows the year itself, so a year keeps its color
@@ -29,6 +30,7 @@ export default function ReportsDashboard() {
   const [data, setData] = useState<Report | null>(null)
   const [loading, setLoading] = useState(true), [error, setError] = useState('')
   const [monthlyTable, setMonthlyTable] = useState(false)
+  const [clientQuery, setClientQuery] = useState('')
   const requestId = useRef(0)
   async function consult() {
     const id = ++requestId.current
@@ -51,6 +53,7 @@ export default function ReportsDashboard() {
       ...data.rows.map(r => [r.name, r.entered, r.entryGoal ?? 'Sin meta', percent(r.entered,r.entryGoal) ?? '', r.closed, r.closureGoal ?? 'Sin meta', percent(r.closed,r.closureGoal) ?? '']),
       [], ['Día', 'Digitados', 'Cerrados'], ...data.activity.map(r => [r.day, r.entered, r.closed]),
       [], ['Categoría', 'Tickets digitados'], ...data.byCategory.map(r => [r.name,r.count]),
+      [], ['Cliente', 'Tickets creados', 'Abiertos', 'Pendientes', 'Cerrados'], ...data.byClient.map(c => [c.name, c.total, c.open, c.pending, c.closed]),
       [], ['Tickets por mes', ...MONTHS, 'Total'], ...data.monthly.years.map(year => [year, ...data.monthly.rows.map(r => r[year] ?? ''), yearTotal(data, year)]),
       [], ['Nota', 'Metas configuradas actualmente. Abiertos y pendientes corresponden al estado actual.'], ['Sin autor de digitación', data.unattributed],
     ]
@@ -104,6 +107,31 @@ export default function ReportsDashboard() {
             {data.monthly.years.map(year => <Line key={year} dataKey={String(year)} name={String(year)} stroke={yearColor(year)} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, stroke: '#fff', fill: yearColor(year) }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} connectNulls={false} isAnimationActive={false} />)}
           </LineChart>
         </ResponsiveContainer></div>}
+      </section>
+      <section className={panel} aria-labelledby="clients-title">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><h2 id="clients-title" className="font-semibold">Tickets por cliente</h2>
+            <p className="mt-1 text-xs text-gray-500">Creados en el mes seleccionado · estado actual · {data.byClient.length} clientes</p></div>
+          <input type="search" aria-label="Buscar cliente" placeholder="Buscar cliente…" value={clientQuery} onChange={e => setClientQuery(e.target.value)} className="w-full sm:w-64 rounded-lg border border-gray-300 px-3 py-1.5 text-sm" />
+        </div>
+        {(() => {
+          const max = Math.max(1, ...data.byClient.map(c => c.total))
+          const term = clientQuery.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+          const rows = data.byClient.filter(c => !term || `${c.name} ${c.email || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(term))
+          return <div className="mt-4 max-h-96 overflow-auto"><table className="w-full text-left text-sm tabular-nums">
+            <caption className="sr-only">Tickets creados en el mes por cliente</caption>
+            <thead className="sticky top-0 bg-gray-50 text-gray-600"><tr>
+              <th scope="col" className="p-3 font-medium">Cliente</th><th scope="col" className="p-3 font-medium">Tickets</th>
+              <th scope="col" className="p-3 text-right font-medium">Abiertos</th><th scope="col" className="p-3 text-right font-medium">Pendientes</th><th scope="col" className="p-3 text-right font-medium">Cerrados</th>
+            </tr></thead>
+            <tbody>{rows.map(c => <tr key={c.id} className="border-b border-gray-100">
+              <td className="p-3"><span className="block font-medium">{c.name}</span>{c.email && <span className="block text-xs text-gray-500">{c.email}</span>}</td>
+              <td className="p-3"><div className="flex min-w-40 items-center gap-3"><div className="h-2 flex-1 rounded-full bg-gray-100" aria-hidden="true"><div className="h-2 rounded-full bg-blue-500" style={{ width: `${c.total / max * 100}%` }} /></div><strong className="w-8 text-right">{c.total}</strong></div></td>
+              <td className="p-3 text-right">{c.open}</td><td className="p-3 text-right">{c.pending}</td><td className="p-3 text-right">{c.closed}</td>
+            </tr>)}</tbody>
+          </table>
+          {!rows.length && <p className="py-8 text-center text-sm text-gray-500">{data.byClient.length ? 'Ningún cliente coincide con la búsqueda.' : 'Sin tickets en este período.'}</p>}</div>
+        })()}
       </section>
       <p className="text-xs leading-5 text-gray-500">Mes calendario · Hora de Colombia. Metas configuradas actualmente; el filtro de categoría compara su actividad con la meta mensual completa. Abiertos y pendientes son el estado actual de los tickets asignados, independientemente del mes. Los cierres se atribuyen a quien los realizó y dejan de contar al reabrirse.{data.unattributed > 0 && ` Hay ${data.unattributed} tickets sin autor registrado incluidos en el total, pero no en las metas individuales.`}</p>
     </>}
