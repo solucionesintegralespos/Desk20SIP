@@ -4,6 +4,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { rememberTicketsQuery } from '@/lib/tickets-list-query'
 import { Filter, Search } from 'lucide-react'
+import { SearchSelect } from '@/components/ui/SearchSelect'
 
 interface TicketFiltersProps {
   currentStatus?: string
@@ -11,10 +12,13 @@ interface TicketFiltersProps {
   currentAssignee?: string
   currentSearch?: string
   currentCategory?: string
+  currentCustomer?: string
   currentFrom?: string
   currentTo?: string
   dateFiltered?: boolean
   categories: Array<{ id: string; name: string }>
+  /** Empty for customers, who only see their own tickets. */
+  customers?: Array<{ id: string; name: string | null; email: string | null }>
   agents: Array<{
     id: string
     name: string | null
@@ -28,10 +32,12 @@ export default function TicketFilters({
   currentAssignee,
   currentSearch,
   currentCategory,
+  currentCustomer,
   currentFrom,
   currentTo,
   dateFiltered,
   categories,
+  customers = [],
   agents,
 }: TicketFiltersProps) {
   const [searchTerm, setSearchTerm] = useState(currentSearch || '')
@@ -79,7 +85,7 @@ export default function TicketFilters({
     router.push(searchParams.get('mine') === '1' ? `${pathname}?mine=1` : pathname)
   }
 
-  const hasFilters = currentStatus || currentPriority || currentAssignee || currentSearch || currentCategory || dateFiltered
+  const hasFilters = currentStatus || currentPriority || currentAssignee || currentSearch || currentCategory || currentCustomer || dateFiltered
 
   return (
     <div className="bg-white rounded-lg shadow p-4 mb-6">
@@ -150,6 +156,16 @@ export default function TicketFilters({
             <option key={category.id} value={category.id}>{category.name}</option>
           ))}
         </select>
+
+        {customers.length > 0 && <SearchSelect
+          aria-label="Cliente"
+          className="w-full md:w-64"
+          placeholder="Buscar cliente…"
+          emptyOption="Todos los clientes"
+          value={currentCustomer || ''}
+          onChange={customer => updateFilter('customer', customer)}
+          options={customers.map(customer => ({ id: customer.id, label: customer.name || customer.email || 'Sin nombre', description: customer.name ? customer.email || undefined : undefined }))}
+        />}
 
         <fieldset className="flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 text-sm text-gray-700">
           <legend className="float-left md:mr-1">Fecha de creación:</legend>

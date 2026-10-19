@@ -15,6 +15,7 @@ interface SearchParams {
   assignee?: string
   search?: string
   category?: string
+  customer?: string
   date?: string
   from?: string
   to?: string
@@ -79,6 +80,11 @@ export default async function TicketsPage({
     whereClause.categoryId = searchParams.category === 'uncategorized' ? null : searchParams.category
   }
 
+  // Customers only ever see their own tickets, so the client filter is for staff.
+  if (searchParams.customer && user.role !== 'CUSTOMER') {
+    whereClause.customerId = searchParams.customer
+  }
+
   // Creation date range in Colombia (from/to, inclusive). Without dates the list shows today;
   // range=all removes the date filter. `date` is the former single-day parameter.
   const allDates = searchParams.range === 'all'
@@ -86,7 +92,7 @@ export default async function TicketsPage({
   if (!allDates) whereClause.createdAt = { gte: range.gte, lt: range.lt }
   const dateFiltered = allDates || !!(searchParams.from || searchParams.to || searchParams.date)
 
-  const [tickets, totalCount, agents, categories] = await Promise.all([
+  const [tickets, totalCount, agents, categories, customers] = await Promise.all([
     prisma.ticket.findMany({
       where: whereClause,
       include: {
@@ -141,6 +147,11 @@ export default async function TicketsPage({
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     }),
+    user.role === 'CUSTOMER' ? Promise.resolve([]) : prisma.user.findMany({
+      where: { role: 'CUSTOMER' },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    }),
   ])
 
   return (
@@ -163,6 +174,8 @@ export default async function TicketsPage({
             currentAssignee={searchParams.assignee}
             currentSearch={searchParams.search}
             currentCategory={searchParams.category}
+            currentCustomer={user.role === 'CUSTOMER' ? undefined : searchParams.customer}
+            customers={customers}
             currentFrom={allDates ? '' : range.dateFrom}
             currentTo={allDates ? '' : range.dateTo}
             dateFiltered={dateFiltered}
