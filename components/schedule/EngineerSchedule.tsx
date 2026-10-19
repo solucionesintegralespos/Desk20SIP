@@ -80,7 +80,9 @@ export default function EngineerSchedule() {
   const holidays = new Map(Array.from(new Set(days.map(day => Number(day.slice(0, 4))))).flatMap(year => Array.from(colombiaHolidays(year))));
   const clients = new Map(data.clients.map(client => [client.id, client]));
   const engineers = data.engineers.filter(person => !engineer || person.id === engineer);
-  const weekEvents = data.events.filter(event => days.includes(event.date) && (!engineer || eventTechIds(event).includes(engineer)));
+  // The API lists active engineers only; events of inactive engineers stay stored and return when they are reactivated.
+  const activeIds = new Set(data.engineers.map(person => person.id));
+  const weekEvents = data.events.filter(event => days.includes(event.date) && eventTechIds(event).some(id => activeIds.has(id)) && (!engineer || eventTechIds(event).includes(engineer)));
   const visibleEvents = weekEvents.filter(event => (!status || event.status === status) && searchText(`${event.title} ${event.description} ${name(clients.get(event.clientId || ''))}`).includes(searchText(query)));
   function open(event?: ScheduleEvent, techId = engineer || data.engineers[0]?.id || '', date = week) {
     setFormError(''); setDeleting(false); setTab('details');

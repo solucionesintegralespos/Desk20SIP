@@ -86,6 +86,13 @@ notificaciones» del menú lateral el navegador pide permiso y muestra además n
 sistema cuando la ventana no está enfocada; requieren HTTPS o `localhost`, y sin permiso los avisos se
 muestran dentro de la aplicación. Validación: `npm run test:reminders`.
 
+Usuarios inactivos: en Usuarios, «Desactivar» conserva al usuario y su historial, pero le impide iniciar sesión
+(también cierra las sesiones abiertas en su siguiente solicitud) y lo oculta de la programación y de los selectores
+para asignar tickets, órdenes y eventos. «Activar» lo devuelve con toda su información. No se puede desactivar la
+propia cuenta ni al último administrador activo. **Requiere la columna `User.active`**: antes de desplegar este código
+ejecuta `npm run prisma:push` o aplica `supabase/migrations/202610190001_user_active.sql`; sin ella el inicio de sesión falla.
+Validación: `npm run test:user-active`.
+
 Después de actualizar: `npm run prisma:push` y `npm run service:seed`.
 La importación de plantillas conserva los cambios que ya existan en SIP SOPORTE.
 Para validar reglas y persistencia en PostgreSQL: `npm run test:service`.

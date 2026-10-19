@@ -9,7 +9,7 @@ export async function GET() {
     await serviceUser();
     const [records, engineers, clients] = await Promise.all([
       prisma.serviceRecord.findMany({ where: { kind: 'schedule' }, orderBy: { createdAt: 'asc' } }),
-      prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] } }, select: { id: true, name: true, email: true, avatar: true }, orderBy: { name: 'asc' } }),
+      prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] }, active: true }, select: { id: true, name: true, email: true, avatar: true }, orderBy: { name: 'asc' } }),
       prisma.user.findMany({ where: { role: 'CUSTOMER' }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } }),
     ]);
     return Response.json({ events: records.map(record => ({ ...record.payload as object, id: record.id, revision: record.revision })), engineers, clients });

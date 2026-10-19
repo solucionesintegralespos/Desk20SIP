@@ -1,5 +1,5 @@
 'use client'
-import { assignedNames } from '@/lib/assigned-names'
+import { assignedSummary } from '@/lib/assigned-names'
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
@@ -196,8 +196,11 @@ export default function TicketsTable({ tickets, agents, currentUserId }: Tickets
                     {priorityLabels[ticket.priority]}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {assignedNames(ticket)}
+                <td className="px-6 py-4 text-sm text-gray-500">
+                  {(() => { const assigned = assignedSummary(ticket); return <span className="flex max-w-[16rem] items-center gap-1.5" title={assigned.all}>
+                    <span className="truncate">{assigned.text}</span>
+                    {assigned.more > 0 && <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700" aria-label={`y ${assigned.more} más: ${assigned.all}`}>+{assigned.more}</span>}
+                  </span> })()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {format(new Date(ticket.updatedAt), 'PPp', { locale: es })}

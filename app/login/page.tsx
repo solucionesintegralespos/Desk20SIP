@@ -63,7 +63,7 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        setError(result.error === 'CredentialsSignin' ? 'Correo o contraseña incorrectos.' : `No se pudo iniciar sesión (${result.error}).`)
+        setError(result.error === 'CredentialsSignin' ? 'Correo o contraseña incorrectos.' : result.error === 'USUARIO_INACTIVO' ? 'Tu usuario está inactivo. Contacta a un administrador.' : `No se pudo iniciar sesión (${result.error}).`)
       } else {
         // Guardar o eliminar email según la opción de recordar
         if (rememberMe) {
@@ -107,7 +107,7 @@ export default function LoginPage() {
         })
 
         if (result?.error) {
-          setError('Código de verificación inválido')
+          setError(result.error === 'USUARIO_INACTIVO' ? 'Tu usuario está inactivo. Contacta a un administrador.' : 'Código de verificación inválido')
         } else {
           if (rememberMe) {
             localStorage.setItem('rememberedEmail', email)

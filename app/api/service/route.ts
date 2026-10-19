@@ -18,7 +18,7 @@ export async function GET(request: Request) {
         const linkedTicketIds = records.flatMap(r => r.kind === 'orders' && typeof (r.payload as { ticketId?: unknown })?.ticketId === 'string' ? [(r.payload as { ticketId: string }).ticketId] : []);
         const [customers, staff, tickets] = await Promise.all([
             scope === 'templates' ? [] : prisma.user.findMany({ where: { role: 'CUSTOMER' }, select: { id: true, name: true, email: true, phone: true, location: true } }),
-            scope === 'templates' ? [] : prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] } }, select: { id: true, name: true, email: true, role: true } }),
+            scope === 'templates' ? [] : prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] } }, select: { id: true, name: true, email: true, role: true, active: true } }),
             scope && scope !== 'orders' ? [] : prisma.ticket.findMany({ where: { OR: [
                 { status: { in: ['OPEN', 'PENDING'] }, ...(user.role === 'ADMIN' ? {} : { assignments: { some: { userId: user.id } } }) },
                 ...(linkedTicketIds.length ? [{ id: { in: linkedTicketIds } }] : []),

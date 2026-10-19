@@ -21,8 +21,8 @@ export default function PublicTicketForm({ customerId, publicToken, categories, 
   const [formData, setFormData] = useState({
     subject: '',
     description: '',
-    priority: '',
-    type: '',
+    priority: 'NORMAL',
+    type: 'INCIDENT',
     categoryId: '',
     assigneeIds: agents[0] ? [agents[0].id] : [],
   })
@@ -51,8 +51,8 @@ export default function PublicTicketForm({ customerId, publicToken, categories, 
         setFormData({
           subject: '',
           description: '',
-          priority: '',
-    type: '',
+          priority: 'NORMAL',
+    type: 'INCIDENT',
     categoryId: '',
     assigneeIds: agents[0] ? [agents[0].id] : [],
         })

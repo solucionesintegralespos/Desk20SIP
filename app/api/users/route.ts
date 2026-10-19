@@ -52,6 +52,7 @@ export async function GET(request: Request) {
         role: true,
         phone: true,
         location: true,
+        active: true,
         createdAt: true,
       },
       orderBy: {

@@ -42,8 +42,9 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
     customerId: currentUser.role === 'CUSTOMER' ? currentUser.id : initial?.customerId || '',
     subject: initial?.subject || '',
     description: initial?.description || '',
-    priority: '',
-    type: '',
+    // Most tickets are normal-priority incidents; both stay editable.
+    priority: 'NORMAL',
+    type: 'INCIDENT',
     categoryId: '',
     hours: '',
     tags: '',

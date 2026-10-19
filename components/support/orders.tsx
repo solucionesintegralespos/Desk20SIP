@@ -160,7 +160,7 @@ export function Orders() {
               <Field label="Cliente" required error={fieldErrors.clientId}><SearchSelect aria-label="Cliente" placeholder="Buscar cliente…" invalid={!!fieldErrors.clientId} value={draft.clientId} onChange={clientId => set({ clientId, ticketId: undefined, checklistId: undefined })} options={clientOptions} /></Field>
               <Field label="Técnico responsable"><Input readOnly value={state.users.find(u => u.id === draft.techId)?.name || user.name} /></Field>
             </div>
-            <TechnicianPicker label="Técnicos que participaron" agents={state.users} value={orderTechIds(draft)} locked={[draft.techId]}
+            <TechnicianPicker label="Técnicos que participaron" agents={state.users.filter(u => u.active !== false || orderTechIds(draft).includes(u.id))} value={orderTechIds(draft)} locked={[draft.techId]}
               onChange={ids => set({ techIds: [draft.techId, ...ids.filter(id => id !== draft.techId)] })} disabled={readOnly} />
             <Field label="Fecha y hora del servicio" required error={fieldErrors.startTime}><Input type="datetime-local" aria-invalid={!!fieldErrors.startTime || undefined} value={datetimeLocal(draft.startTime)} onChange={event => set({ startTime: event.target.value ? new Date(event.target.value).toISOString() : '' })} /></Field>
             <Field label="Servicio realizado" required error={fieldErrors.serviceName}><Input aria-invalid={!!fieldErrors.serviceName || undefined} value={draft.serviceName} onChange={event => set({ serviceName: event.target.value })} /></Field>

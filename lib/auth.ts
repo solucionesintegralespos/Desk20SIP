@@ -3,6 +3,8 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 
+export const INACTIVE_USER = 'USUARIO_INACTIVO'
+
 // Cookie transport follows the deployment URL, including local HTTP on the LAN.
 const secureCookies = process.env.NEXTAUTH_URL
   ? new URL(process.env.NEXTAUTH_URL).protocol === 'https:'
@@ -43,6 +45,11 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
+        // Checked after the password so the message never reveals which accounts exist.
+        if (!user.active) {
+          throw new Error(INACTIVE_USER)
+        }
+
         return {
           id: user.id,
           email: user.email,
@@ -64,6 +71,20 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id
         token.role = user.role
+        return token
+      }
+      // Sessions last 30 days: re-check on every request so deactivating (or deleting) a user
+      // ends their open sessions. Throwing here makes next-auth drop the session cookie and
+      // getServerSession return null everywhere.
+      if (token.id) {
+        let account: { active: boolean } | null | undefined
+        try {
+          account = await prisma.user.findUnique({ where: { id: token.id as string }, select: { active: true } })
+        } catch (error) {
+          // A database outage must not sign everyone out; the request fails on its own queries.
+          console.error('No se pudo verificar el estado del usuario', error)
+        }
+        if (account === null || account?.active === false) throw new Error(INACTIVE_USER)
       }
       return token
     },

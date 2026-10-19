@@ -43,6 +43,8 @@ model User {
   address            String?
   publicToken        String?      @unique
   emailNotifications Boolean      @default(true)
+  // Inactive users cannot sign in and are hidden from scheduling and assignment; data is kept.
+  active             Boolean      @default(true)
   twoFactorEnabled   Boolean      @default(false)
   twoFactorSecret    String?
   organizationId     String?

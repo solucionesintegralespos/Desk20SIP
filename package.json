@@ -16,6 +16,7 @@
     "test:order-email": "node scripts/test-order-email.cjs",
     "test:reminders": "node scripts/test-reminders.cjs",
     "test:schedule-repeat": "node scripts/test-schedule-repeat.cjs",
+    "test:user-active": "node scripts/test-user-active.cjs",
     "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {

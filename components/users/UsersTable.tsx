@@ -5,7 +5,8 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { UserRole } from '@prisma/client'
 import { useRouter } from 'next/navigation'
-import { Mail, Phone, MapPin, Ticket, UserCog } from 'lucide-react'
+import { Mail, Phone, MapPin, Ticket, UserCog, Power } from 'lucide-react'
+import { toast } from 'react-hot-toast'
 import UserFilters from './UserFilters'
 import { DirectoryView } from '../ViewToggle'
 import EditUserModal from './EditUserModal'
@@ -20,6 +21,7 @@ interface User {
   role: UserRole
   phone: string | null
   location: string | null
+  active: boolean
   createdAt: Date
   _count: {
     createdTickets: number
@@ -30,6 +32,7 @@ interface User {
 interface UsersTableProps {
   users: User[]
   currentRole?: string
+  currentUserId?: string
 }
 
 const roleLabels = {
@@ -44,10 +47,32 @@ const roleColors = {
   CUSTOMER: 'bg-green-100 text-green-800',
 }
 
-export default function UsersTable({ users, currentRole }: UsersTableProps) {
+export default function UsersTable({ users, currentRole, currentUserId }: UsersTableProps) {
   const router = useRouter()
   const [view, setView] = useState<DirectoryView>('cards')
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [toggling, setToggling] = useState<string | null>(null)
+
+  // Deactivating keeps the user and their history; they cannot sign in and leave scheduling and assignment lists.
+  async function toggleActive(user: User) {
+    const name = user.name || user.email || 'este usuario'
+    if (user.active && !confirm(`¿Desactivar a ${name}? No podrá iniciar sesión y dejará de aparecer en la programación y en las asignaciones. Sus datos se conservan y puedes reactivarlo cuando quieras.`)) return
+    setToggling(user.id)
+    try {
+      const response = await fetch(`/api/users/${user.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !user.active }) })
+      const result = await response.json()
+      if (!response.ok) throw Error(result.error || 'No se pudo cambiar el estado')
+      toast.success(user.active ? `${name} quedó inactivo` : `${name} está activo de nuevo`)
+      router.refresh()
+    } catch (error) { toast.error((error as Error).message) }
+    finally { setToggling(null) }
+  }
+  const toggleButton = (user: User) => user.id === currentUserId ? null : <button type="button" disabled={toggling === user.id} onClick={() => void toggleActive(user)}
+    aria-label={`${user.active ? 'Desactivar' : 'Activar'} a ${user.name || user.email}`} title={user.active ? 'Desactivar usuario' : 'Activar usuario'}
+    className={`inline-flex items-center gap-1 rounded-lg p-2 text-xs font-medium disabled:opacity-50 ${user.active ? 'text-gray-500 hover:bg-red-50 hover:text-red-700' : 'text-green-700 hover:bg-green-50'}`}>
+    <Power className="h-4 w-4" /><span>{user.active ? 'Desactivar' : 'Activar'}</span>
+  </button>
+  const inactiveBadge = <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700">Inactivo</span>
 
   return (
     <>
@@ -55,10 +80,10 @@ export default function UsersTable({ users, currentRole }: UsersTableProps) {
       {!users.length && <p className="p-6 bg-white rounded-lg">No se encontraron usuarios</p>}
       {view === 'list' ? <div className="overflow-x-auto bg-white rounded-lg"><table className="w-full text-sm text-left">
         <thead><tr className="border-b"><th className="p-4">Usuario</th><th>Correo</th><th>Rol</th><th>Teléfono</th><th>Tickets asignados</th><th>Acciones</th></tr></thead>
-        <tbody>{users.map(user => <tr key={user.id} className="border-b"><td className="p-4">{user.name || 'Sin nombre'}</td><td>{user.email}</td><td>{roleLabels[user.role]}</td><td>{user.phone || '—'}</td><td>{user._count.assignedTickets}</td><td><button aria-label="Editar usuario" onClick={() => setEditingUser(user)} className="p-2"><UserCog size={18} /></button></td></tr>)}</tbody>
+        <tbody>{users.map(user => <tr key={user.id} className="border-b"><td className="p-4">{user.name || 'Sin nombre'} {!user.active && inactiveBadge}</td><td>{user.email}</td><td>{roleLabels[user.role]}</td><td>{user.phone || '—'}</td><td>{user._count.assignedTickets}</td><td className="whitespace-nowrap"><button aria-label="Editar usuario" onClick={() => setEditingUser(user)} className="p-2"><UserCog size={18} /></button>{toggleButton(user)}</td></tr>)}</tbody>
       </table></div> : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {users.map((user) => (
-          <div key={user.id} className="bg-white rounded-lg shadow hover:shadow-md transition">
+          <div key={user.id} className={`bg-white rounded-lg shadow hover:shadow-md transition ${user.active ? '' : 'opacity-70'}`}>
             <div className="p-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center space-x-3">
@@ -71,18 +96,25 @@ export default function UsersTable({ users, currentRole }: UsersTableProps) {
                     <h3 className="font-semibold text-gray-900">
                       {user.name || 'Sin nombre'}
                     </h3>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${roleColors[user.role]}`}>
-                      {roleLabels[user.role]}
-                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${roleColors[user.role]}`}>
+                        {roleLabels[user.role]}
+                      </span>
+                      {!user.active && inactiveBadge}
+                    </div>
                   </div>
                 </div>
                 
-                <button
-                  onClick={() => setEditingUser(user)}
-                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
-                >
-                  <UserCog className="h-5 w-5" />
-                </button>
+                <div className="flex items-center">
+                  {toggleButton(user)}
+                  <button
+                    onClick={() => setEditingUser(user)}
+                    aria-label="Editar usuario"
+                    className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+                  >
+                    <UserCog className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">

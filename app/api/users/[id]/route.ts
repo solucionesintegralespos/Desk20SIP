@@ -24,7 +24,7 @@ export async function PATCH(
     // Obtener usuario con su rol
     const currentUser = await prisma.user.findUnique({
       where: { email: session.user.email || '' },
-      select: { role: true }
+      select: { id: true, role: true }
     })
 
     // Solo ADMIN puede editar usuarios
@@ -36,6 +36,19 @@ export async function PATCH(
     }
 
     const data = await request.json()
+
+    // Activate / deactivate only: the user and their history are kept.
+    if (Object.keys(data).length === 1 && 'active' in data) {
+      if (typeof data.active !== 'boolean') return NextResponse.json({ error: 'Estado inválido' }, { status: 400 })
+      const target = await prisma.user.findUnique({ where: { id: params.id }, select: { role: true } })
+      if (!target || target.role === 'CUSTOMER') return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
+      if (!data.active && params.id === currentUser.id) return NextResponse.json({ error: 'No puedes desactivar tu propia cuenta' }, { status: 403 })
+      if (!data.active && target.role === 'ADMIN' && await prisma.user.count({ where: { role: 'ADMIN', active: true, id: { not: params.id } } }) === 0)
+        return NextResponse.json({ error: 'Debe quedar al menos un administrador activo' }, { status: 409 })
+      const user = await prisma.user.update({ where: { id: params.id }, data: { active: data.active }, select: { id: true, active: true } })
+      return NextResponse.json(user)
+    }
+
     const invalid = validateUserPerformance(data)
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 })
     const { name, role, phone, location, password } = data

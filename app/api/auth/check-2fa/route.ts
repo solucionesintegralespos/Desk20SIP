@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         password: true,
-        twoFactorEnabled: true
+        twoFactorEnabled: true,
+        active: true
       }
     })
 
@@ -36,6 +37,11 @@ export async function POST(request: NextRequest) {
         { error: 'Credenciales inválidas' },
         { status: 401 }
       )
+    }
+
+    // Do not ask an inactive user for a 2FA code; the sign-in reports the inactive account.
+    if (!user.active) {
+      return NextResponse.json({ error: 'Tu usuario está inactivo. Contacta a un administrador.' }, { status: 403 })
     }
 
     return NextResponse.json({

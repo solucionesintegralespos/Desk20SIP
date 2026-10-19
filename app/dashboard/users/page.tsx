@@ -50,6 +50,7 @@ export default async function UsersPage({
         role: true,
         phone: true,
         location: true,
+        active: true,
         createdAt: true,
         _count: {
           select: {
@@ -58,9 +59,8 @@ export default async function UsersPage({
           }
         }
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      // Active users first; inactive ones stay listed so they can be reactivated.
+      orderBy: [{ active: 'desc' }, { createdAt: 'desc' }]
     }),
     prisma.$transaction([
       prisma.user.count({ where: { role: 'ADMIN' } }),
@@ -127,7 +127,7 @@ export default async function UsersPage({
 
           
 
-          <UsersTable currentRole={searchParams.role} users={users.map(u => ({ ...u, _count: { ...u._count, assignedTickets: u._count.ticketAssignments } }))} />
+          <UsersTable currentUserId={user.id} currentRole={searchParams.role} users={users.map(u => ({ ...u, _count: { ...u._count, assignedTickets: u._count.ticketAssignments } }))} />
         </div>
       </div></>
   )
