@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
+import { rateLimit, clientIp, tooManyRequests, MINUTE } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   try {
@@ -13,6 +14,10 @@ export async function POST(request: Request) {
         { status: 403 }
       )
     }
+
+    // Public endpoint: a few accounts per address and hour.
+    const limit = rateLimit(`register:ip:${clientIp(request.headers)}`, 5, 60 * MINUTE)
+    if (!limit.ok) return tooManyRequests(limit.retryAfter)
 
     const { name, email, password } = await request.json()
 

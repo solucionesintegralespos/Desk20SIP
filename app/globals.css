@@ -28,6 +28,9 @@
 .schedule-permission {background:#ccfbf1;color:#115e59;border-color:#5eead4;}
 .schedule-medical {background:#fce7f3;color:#9d174d;border-color:#f9a8d4;}
 .schedule-event-open {display:block;width:100%;text-align:left;}
+.schedule-event[draggable="true"] {cursor:grab;}
+.schedule-dragging {opacity:.45;}
+.schedule-table td.schedule-drop {background:#dbeafe;box-shadow:inset 0 0 0 2px #063d92;}
 .schedule-done {display:inline-flex;align-items:center;gap:3px;margin-top:7px;padding:2px 8px;border-radius:999px;border:1px solid currentColor;background:#ffffffb3;font-size:10px;font-weight:600;}
 .schedule-done:hover {background:#fff;}
 .schedule-done:disabled {opacity:.6;}
@@ -174,6 +177,7 @@
   [data-theme="dark"] .schedule-permission {background:#123d39;color:#99f6e4;border-color:#2f8f84;}
   [data-theme="dark"] .schedule-medical {background:#4a1d35;color:#fbcfe8;border-color:#a8507d;}
   [data-theme="dark"] .schedule-done {background:#0f172a99;}
+  [data-theme="dark"] .schedule-table td.schedule-drop {background:#1e3a5f;box-shadow:inset 0 0 0 2px #93c5fd;}
   [data-theme="dark"] .schedule-tabs {border-color:#475569;}
   [data-theme="dark"] .schedule-tabs [role="tab"] {color:#aebed1;}
   [data-theme="dark"] .schedule-tabs [role="tab"][aria-selected="true"] {color:#93c5fd;border-bottom-color:#93c5fd;}

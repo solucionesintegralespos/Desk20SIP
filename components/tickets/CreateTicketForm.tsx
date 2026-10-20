@@ -8,6 +8,8 @@ import TechnicianPicker from './TechnicianPicker'
 import { showTicketCreatedNotice } from './TicketCreatedNotice'
 import { useTicketsListHref } from '@/lib/tickets-list-query'
 import { SearchSelect } from '@/components/ui/SearchSelect'
+import { toast } from 'react-hot-toast'
+import { acceptFiles, UploadError, UPLOAD_ACCEPT, MAX_UPLOAD_MB } from '@/lib/upload-limits'
 
 interface Category {
   id: string
@@ -36,6 +38,8 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
   const [loading, setLoading] = useState(false)
   const [improvingText, setImprovingText] = useState(false)
   const [error, setError] = useState('')
+  // Field-level messages appear after the first attempt to create the ticket.
+  const [attempted, setAttempted] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [formData, setFormData] = useState({
@@ -67,7 +71,9 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
       if (response.ok) {
         const data = await response.json()
         setAgents(data.agents)
-        setFormData(prev => ({ ...prev, assigneeIds: prev.assigneeIds.length ? prev.assigneeIds : [data.agents.find((a: { id: string }) => a.id === currentUser.id)?.id || data.agents[0]?.id].filter(Boolean) }))
+        // The creator is preselected when they are a technician; it can be changed but never left empty
+        // (the form and the API both reject a ticket without technicians).
+        setFormData(prev => ({ ...prev, assigneeIds: prev.assigneeIds.length ? prev.assigneeIds : data.agents.some((a: { id: string }) => a.id === currentUser.id) ? [currentUser.id] : [] }))
       }
     } catch (error) {
       console.error('Error al cargar agentes:', error)
@@ -98,11 +104,17 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
     }
   }
 
+  // Files over the limit or of an unsupported type are refused here, with a warning,
+  // before any upload starts; the server enforces the same rules.
+  const addFiles = (files: File[]) => {
+    const { accepted, rejected } = acceptFiles(files)
+    rejected.forEach(reason => toast.error(reason, { duration: 8000 }))
+    if (accepted.length) setAttachments(prev => [...prev, ...accepted])
+  }
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles = Array.from(e.target.files)
-      setAttachments(prev => [...prev, ...newFiles])
-    }
+    if (e.target.files) addFiles(Array.from(e.target.files))
+    // Allow choosing the same file again after removing it.
+    e.target.value = ''
   }
 
   const removeAttachment = (index: number) => {
@@ -125,9 +137,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
       }
     }
 
-    if (newFiles.length > 0) {
-      setAttachments(prev => [...prev, ...newFiles]);
-    }
+    if (newFiles.length > 0) addFiles(newFiles);
   };
 
   const uploadFiles = async (files: File[]): Promise<string[]> => {
@@ -143,14 +153,16 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
           body: formData,
         })
         
-        if (response.ok) {
-          const data = await response.json()
-          uploadedUrls.push(data.url)
-        } else {
-          console.error('Error al subir archivo:', await response.text())
+        if (!response.ok) {
+          const detail = await response.json().catch(() => null)
+          throw new UploadError(detail?.error || `No se pudo subir «${file.name}».`)
         }
+        const data = await response.json()
+        uploadedUrls.push(data.url)
       } catch (error) {
+        if (error instanceof UploadError) throw error
         console.error('Error uploading file:', error)
+        throw new UploadError(`No se pudo subir «${file.name}». Revisa la conexión e inténtalo de nuevo.`)
       }
     }
     
@@ -195,8 +207,10 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.priority || !formData.type || !formData.categoryId || !formData.assigneeIds.length) {
-      setError('Selecciona prioridad, tipo, categoría y al menos un técnico'); return
+    setAttempted(true)
+    if (!formData.assigneeIds.length) { setError('Asigna al menos un técnico al ticket'); return }
+    if (!formData.customerId || !formData.priority || !formData.type || !formData.categoryId) {
+      setError('Selecciona cliente, prioridad, tipo y categoría'); return
     }
     setLoading(true)
     setError('')
@@ -232,7 +246,8 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
       }
     } catch (error) {
       console.error('Error creating ticket:', error)
-      setError('Error al crear el ticket')
+      // A refused attachment stops the ticket; the message names the file.
+      setError(error instanceof UploadError ? error.message : 'Error al crear el ticket')
     } finally {
       setLoading(false)
     }
@@ -394,7 +409,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
           </div>
         </div>
 
-        <TechnicianPicker agents={agents} value={formData.assigneeIds}
+        <TechnicianPicker agents={agents} value={formData.assigneeIds} error={attempted && !formData.assigneeIds.length ? 'Asigna al menos un técnico.' : undefined}
           onChange={assigneeIds => setFormData({ ...formData, assigneeIds })} disabled={loading} />
 
         <div>
@@ -425,7 +440,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
               onChange={handleFileChange}
               className="hidden"
               id="file-upload"
-              accept="image/*,.pdf,.doc,.docx,.txt"
+              accept={UPLOAD_ACCEPT}
             />
             <label
               htmlFor="file-upload"
@@ -436,7 +451,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
                 Haz clic para subir archivos o arrastra y suelta
               </span>
               <span className="text-xs text-gray-500">
-                Imágenes, PDF, DOC, TXT (máx. 10MB)
+                Imágenes, PDF, Office, TXT, CSV, ZIP o MP4 (máx. {MAX_UPLOAD_MB} MB por archivo)
               </span>
             </label>
           </div>
@@ -506,7 +521,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
           </Link>
           <button
             type="submit"
-            disabled={loading || !formData.customerId || !formData.priority || !formData.type || !formData.categoryId || !formData.assigneeIds.length}
+            disabled={loading}
             className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Creando...' : 'Crear Ticket'}

@@ -8,6 +8,15 @@ import Link from 'next/link'
 import { Headphones, Eye, EyeOff } from 'lucide-react'
 import { useOrg } from '@/components/OrgProvider'
 
+// Server sign-in errors (lib/auth.ts) shown as messages for people.
+function loginError(code: string) {
+  if (code === 'CredentialsSignin') return 'Correo o contraseña incorrectos.'
+  if (code === 'USUARIO_INACTIVO') return 'Tu usuario está inactivo. Contacta a un administrador.'
+  if (code === 'CODIGO_2FA_INVALIDO') return 'Código de verificación inválido.'
+  if (code === 'DEMASIADOS_INTENTOS') return 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.'
+  return `No se pudo iniciar sesión (${code}).`
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
@@ -63,7 +72,7 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        setError(result.error === 'CredentialsSignin' ? 'Correo o contraseña incorrectos.' : result.error === 'USUARIO_INACTIVO' ? 'Tu usuario está inactivo. Contacta a un administrador.' : `No se pudo iniciar sesión (${result.error}).`)
+        setError(loginError(result.error))
       } else {
         // Guardar o eliminar email según la opción de recordar
         if (rememberMe) {
@@ -107,7 +116,7 @@ export default function LoginPage() {
         })
 
         if (result?.error) {
-          setError(result.error === 'USUARIO_INACTIVO' ? 'Tu usuario está inactivo. Contacta a un administrador.' : 'Código de verificación inválido')
+          setError(loginError(result.error))
         } else {
           if (rememberMe) {
             localStorage.setItem('rememberedEmail', email)

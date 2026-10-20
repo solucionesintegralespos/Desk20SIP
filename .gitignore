@@ -36,3 +36,6 @@ next-env.d.ts
 
 # prisma
 public/uploads/*
+
+# uploaded files (served only through app/uploads/[filename])
+/storage/

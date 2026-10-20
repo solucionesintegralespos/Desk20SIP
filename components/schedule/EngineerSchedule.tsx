@@ -50,21 +50,26 @@ export default function EngineerSchedule() {
   const [tab, setTab] = useState<'details' | 'repeat'>('details');
   const [repeat, setRepeat] = useState<Repeat>({ mode: 'none', weekday: 1 });
   const [completing, setCompleting] = useState<string | null>(null);
-  async function load() {
-    setLoading(true); setError('');
-    try {
-      const response = await fetch('/api/schedule', { cache: 'no-store' });
-      const result = await response.json();
-      if (!response.ok) throw Error(result.error || 'No se pudo cargar la programación');
-      setData(result);
-    } catch (error) { setError((error as Error).message); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { void load(); }, []);
-  // Task reminders link here with ?event=<id>: show its week and open it once loaded.
+  // Task reminders link here with ?event=<id>: that event is fetched with the week, then shown.
   const router = useRouter();
   const requestedEvent = useSearchParams().get('event');
   const openedEvent = useRef<string | null>(null);
+  const loadId = useRef(0);
+  // Only the visible week is fetched (Monday to Sunday, so the weekend toggle needs no reload).
+  async function load(target = week) {
+    const id = ++loadId.current;
+    setLoading(true); setError('');
+    try {
+      const params = new URLSearchParams({ from: target, to: addDays(target, 6) });
+      if (requestedEvent && openedEvent.current !== requestedEvent) params.set('include', requestedEvent);
+      const response = await fetch(`/api/schedule?${params}`, { cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error || 'No se pudo cargar la programación');
+      if (id === loadId.current) setData(result);
+    } catch (error) { if (id === loadId.current) setError((error as Error).message); }
+    finally { if (id === loadId.current) setLoading(false); }
+  }
+  useEffect(() => { void load(week); }, [week]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!requestedEvent) { openedEvent.current = null; return; }
     if (loading || openedEvent.current === requestedEvent) return;
@@ -125,6 +130,23 @@ export default function EngineerSchedule() {
     router.push(`/dashboard/tickets/new?${params}`);
   }
   const patch = (value: Partial<Draft>) => setDraft(current => current && ({ ...current, ...value }));
+  // Dragging a card to another cell changes its day and, across rows, swaps that engineer.
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  async function moveEvent(id: string, fromTech: string, toTech: string, date: string) {
+    const event = data.events.find(item => item.id === id);
+    if (!event || (fromTech === toTech && event.date === date)) return;
+    const current = eventTechIds(event);
+    const techIds = current.includes(toTech) ? current.filter(tech => tech !== fromTech || tech === toTech) : current.map(tech => tech === fromTech ? toTech : tech);
+    try {
+      const response = await fetch('/api/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...event, date, techIds, techId: techIds[0] }) });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error || 'No se pudo mover el evento');
+      toast.success(`«${event.title}» movido al ${shortDate(date)}${fromTech !== toTech ? ` · ${name(data.engineers.find(person => person.id === toTech))}` : ''}`);
+      await load();
+      window.dispatchEvent(new Event(SCHEDULE_CHANGED));
+    } catch (error) { toast.error((error as Error).message); }
+  }
   // "Listo" on the weekly grid: mark the task completed without opening it.
   async function complete(event: ScheduleEvent) {
     setCompleting(event.id);
@@ -140,7 +162,17 @@ export default function EngineerSchedule() {
   }
   // Preview of a repeated event, computed with the same rules the server applies.
   const rule = draft && !draft.id ? toRule(repeat) : null;
-  const preview = draft && rule ? repeatDates(draft.date, rule).map(date => ({ date, reason: repeatConflict(data.events, date, draft.start, draft.techIds || []) })) : [];
+  const [yearEvents, setYearEvents] = useState<ScheduleEvent[] | null>(null);
+  const previewFrom = rule && draft ? draft.date : '';
+  useEffect(() => {
+    if (!previewFrom) { setYearEvents(null); return; }
+    let cancelled = false;
+    fetch(`/api/schedule?${new URLSearchParams({ from: previewFrom, to: `${previewFrom.slice(0, 4)}-12-31` })}`, { cache: 'no-store' })
+      .then(response => response.json()).then(result => { if (!cancelled) setYearEvents(result.events || []); })
+      .catch(() => { if (!cancelled) setYearEvents([]); });
+    return () => { cancelled = true; };
+  }, [previewFrom]);
+  const preview = draft && rule ? repeatDates(draft.date, rule).map(date => ({ date, reason: repeatConflict(yearEvents || [], date, draft.start, draft.techIds || []) })) : [];
   const skippedPreview = preview.filter(item => item.reason);
 
   return <div className="h-full overflow-auto p-4 lg:p-6 service-module">
@@ -159,14 +191,21 @@ export default function EngineerSchedule() {
       <div className="schedule-scroll"><table className="schedule-table"><caption className="sr-only">Programación semanal de ingenieros</caption><thead><tr><th scope="col" className="schedule-person">Ingenieros</th>{days.map(day => <th scope="col" key={day} className={[day === serviceDay(new Date().toISOString()) ? 'schedule-today' : '', holidays.has(day) ? 'schedule-holiday' : ''].join(' ')}>{dateLabel(day, { weekday: 'long', day: 'numeric' })}{holidays.has(day) && <span className="schedule-holiday-name">Festivo · {holidays.get(day)}</span>}</th>)}</tr><tr className="schedule-totals"><th className="schedule-person" scope="row">EVENTOS PROGRAMADOS</th>{days.map(day => <td key={day} className={holidays.has(day) ? 'schedule-holiday' : undefined}>{visibleEvents.filter(event => event.date === day).length}</td>)}</tr></thead><tbody>{engineers.map(person => <tr key={person.id}><th scope="row" className="schedule-person"><div className="flex gap-2 items-center"><Avatar src={person.avatar} alt={name(person)} fallback={name(person)} size="lg" className="h-16 w-16 shrink-0 text-2xl" /><span className="min-w-0 line-clamp-3" title={name(person)}>{name(person)}</span></div><p className="text-xs text-slate-500 font-normal mt-2">{visibleEvents.filter(event => eventTechIds(event).includes(person.id)).length} eventos</p></th>{days.map(day => {
         const events = visibleEvents.filter(event => eventTechIds(event).includes(person.id) && event.date === day).sort((a, b) => a.start.localeCompare(b.start));
         const allEvents = weekEvents.filter(event => eventTechIds(event).includes(person.id) && event.date === day);
-        return <td key={day} className={holidays.has(day) ? 'schedule-holiday' : undefined}><div className="schedule-cell">{events.map(event => {
+        const cellKey = `${person.id}|${day}`;
+        return <td key={day} className={[holidays.has(day) ? 'schedule-holiday' : '', dropTarget === cellKey ? 'schedule-drop' : ''].join(' ') || undefined}
+          onDragOver={event => { if (dragging) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
+          onDragEnter={() => { if (dragging) setDropTarget(cellKey); }}
+          onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(current => current === cellKey ? null : current); }}
+          onDrop={event => { event.preventDefault(); setDropTarget(null); setDragging(null); try { const { id, from } = JSON.parse(event.dataTransfer.getData('text/plain')); void moveEvent(id, from, person.id, day); } catch { /* Not one of our cards. */ } }}><div className="schedule-cell">{events.map(event => {
           const overlap = allEvents.some(other => other.id !== event.id && other.start === event.start);
           const pending = event.status === 'planned' || event.status === 'in_progress';
-          return <div key={event.id} className={`schedule-event schedule-${event.status}`}><button type="button" onClick={() => open(event)} className="schedule-event-open"><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span>{eventTechIds(event).length > 1 && <span className="block text-[10px] mt-1" title={eventTechIds(event).map(id => name(data.engineers.find(person => person.id === id))).join(', ')}>Compartido · {eventTechIds(event).length} ingenieros</span>}<span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span></button>{pending && <button type="button" className="schedule-done" disabled={completing === event.id} onClick={() => void complete(event)} aria-label={`Marcar «${event.title}» como completada`}><Check size={11} aria-hidden="true" />{completing === event.id ? 'Guardando…' : 'Listo'}</button>}</div>;
+          return <div key={event.id} className={`schedule-event schedule-${event.status} ${dragging === event.id ? 'schedule-dragging' : ''}`} draggable
+            onDragStart={drag => { drag.dataTransfer.setData('text/plain', JSON.stringify({ id: event.id, from: person.id })); drag.dataTransfer.effectAllowed = 'move'; setDragging(event.id); }}
+            onDragEnd={() => { setDragging(null); setDropTarget(null); }}><button type="button" onClick={() => open(event)} className="schedule-event-open"><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span>{eventTechIds(event).length > 1 && <span className="block text-[10px] mt-1" title={eventTechIds(event).map(id => name(data.engineers.find(person => person.id === id))).join(', ')}>Compartido · {eventTechIds(event).length} ingenieros</span>}<span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span></button>{pending && <button type="button" className="schedule-done" disabled={completing === event.id} onClick={() => void complete(event)} aria-label={`Marcar «${event.title}» como completada`}><Check size={11} aria-hidden="true" />{completing === event.id ? 'Guardando…' : 'Listo'}</button>}</div>;
         })}{!events.length && <p className="schedule-empty">{allEvents.length ? 'Sin coincidencias' : 'Sin programación'}</p>}<button type="button" className="schedule-add" aria-label={`Añadir evento para ${name(person)} el ${day}`} onClick={() => open(undefined, person.id, day)}><Plus size={12} />Añadir</button></div></td>;
       })}</tr>)}</tbody></table></div>
       {!engineers.length && <p className="p-8 text-center text-slate-500">No hay ingenieros para mostrar.</p>}
-      <p className="text-xs text-slate-500 mt-3">Horario de Colombia. Los eventos con la misma hora de inicio se señalan en la programación.</p>
+      <p className="text-xs text-slate-500 mt-3">Horario de Colombia. Los eventos con la misma hora de inicio se señalan en la programación. Arrastra un evento a otro día o ingeniero para moverlo (con mouse).</p>
     </>}
     <Dialog open={!!draft} onOpenChange={value => { if (!value && !busy) setDraft(null); }}><DialogContent><DialogHeader><DialogTitle>{draft?.id ? 'Detalle del evento' : 'Nuevo evento'}</DialogTitle><DialogDescription>Programa una actividad para un ingeniero y un día.</DialogDescription></DialogHeader>{draft && <form noValidate onSubmit={event => { event.preventDefault(); void persist(); }} className="detail-stack"><fieldset disabled={busy} className="detail-stack">
       {!draft.id && <div role="tablist" aria-label="Secciones del evento" className="schedule-tabs">
@@ -192,6 +231,7 @@ export default function EngineerSchedule() {
           <p className="mt-1 text-xs text-slate-500">Se omiten los días en que alguno de los ingenieros ya tiene un evento a la misma hora o está de vacaciones{rule.mode === 'monthly' ? ', y los meses que no tienen ese día' : ''}.</p>
           {skippedPreview.length > 0 && <details className="mt-2 text-xs"><summary className="cursor-pointer">{skippedPreview.length} fechas omitidas</summary><ul className="mt-1 max-h-32 overflow-y-auto">{skippedPreview.map(item => <li key={item.date}>{shortDate(item.date)} · {item.reason === 'vacation' ? 'vacaciones' : 'otro evento a la misma hora'}</li>)}</ul></details>}
           {!preview.length && <p className="mt-1 text-xs">No hay fechas para repetir antes de fin de año.</p>}
+          {yearEvents === null && preview.length > 0 && <p className="mt-1 text-xs text-slate-500">Comprobando fechas ocupadas…</p>}
         </div>}
       </div>}
       {formError && <p role="alert" className="text-red-700 text-sm">{formError}</p>}

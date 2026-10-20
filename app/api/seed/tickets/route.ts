@@ -15,8 +15,17 @@ export async function POST(request: Request) {
       )
     }
 
+    // Development helper: never in production, administrators only, bounded size.
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_TICKET_SEED !== 'true') {
+      return NextResponse.json({ error: 'No disponible' }, { status: 404 })
+    }
+    const actor = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
+    if (actor?.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 })
+    }
+
     const { count } = await request.json()
-    const ticketsToCreate = count || 100
+    const ticketsToCreate = Math.min(Math.max(1, Number(count) || 100), 500)
 
     // Get users for creating tickets
     const [customers, agents] = await Promise.all([

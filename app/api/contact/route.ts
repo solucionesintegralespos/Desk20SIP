@@ -1,17 +1,31 @@
 import { NextResponse } from 'next/server'
-import { sendEmail } from '@/lib/email'
+import { z } from 'zod'
+import { sendEmail, escapeHtml } from '@/lib/email'
+import { rateLimitAll, clientIp, tooManyRequests, MINUTE } from '@/lib/rate-limit'
+
+const contactSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(254),
+  subject: z.string().trim().min(1).max(200),
+  message: z.string().trim().min(1).max(5000),
+})
 
 export async function POST(request: Request) {
   try {
-    const { name, email, subject, message } = await request.json()
-
-    // Validate input
-    if (!name || !email || !subject || !message) {
+    // Public form: limit submissions per address and per destination email.
+    const body = await request.json().catch(() => null)
+    const parsed = contactSchema.safeParse(body)
+    if (!parsed.success) {
       return NextResponse.json(
         { error: 'Todos los campos son requeridos' },
         { status: 400 }
       )
     }
+    const limit = rateLimitAll([[`contact:ip:${clientIp(request.headers)}`, 5, 60 * MINUTE], [`contact:email:${parsed.data.email.toLowerCase()}`, 3, 60 * MINUTE]])
+    if (!limit.ok) return tooManyRequests(limit.retryAfter)
+    // Everything typed by the visitor is escaped before it goes into HTML.
+    const name = escapeHtml(parsed.data.name), email = escapeHtml(parsed.data.email), subject = escapeHtml(parsed.data.subject)
+    const message = escapeHtml(parsed.data.message)
 
     // Email para el administrador (notificación)
     const adminEmailHtml = `
@@ -83,14 +97,8 @@ export async function POST(request: Request) {
               <h1 style="margin: 0;">Gracias por Contactarnos</h1>
             </div>
             <div class="content">
-              <p>Hola ${name},</p>
+              <p>Hola,</p>
               <p>Hemos recibido tu mensaje y te responderemos lo antes posible.</p>
-              
-              <div class="message-box">
-                <p><strong>Tu mensaje:</strong></p>
-                <p><strong>Asunto:</strong> ${subject}</p>
-                <p style="margin-top: 15px;">${message.replace(/\n/g, '<br>')}</p>
-              </div>
               
               <p>Nuestro equipo revisará tu consulta y te contactaremos pronto.</p>
               
@@ -110,13 +118,13 @@ export async function POST(request: Request) {
     // Enviar email al administrador
     await sendEmail({
       to: process.env.SMTP_USER || '',
-      subject: `Nuevo mensaje de contacto: ${subject}`,
+      subject: `Nuevo mensaje de contacto: ${parsed.data.subject.replace(/[\r\n]+/g, ' ')}`,
       html: adminEmailHtml,
     })
 
     // Enviar email de confirmación al usuario
     await sendEmail({
-      to: email,
+      to: parsed.data.email,
       subject: 'Confirmación de tu mensaje - SIP SOPORTE',
       html: userEmailHtml,
     })

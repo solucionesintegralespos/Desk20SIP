@@ -18,6 +18,12 @@ export async function POST(
       )
     }
 
+    // The public link lets anyone create tickets as this customer: staff only.
+    const actor = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
+    if (!actor || actor.role === 'CUSTOMER') {
+      return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 })
+    }
+
     // Generate a unique token
     const token = randomBytes(32).toString('hex')
 
@@ -61,6 +67,12 @@ export async function GET(
         { error: 'No autorizado' },
         { status: 401 }
       )
+    }
+
+    // The public link lets anyone create tickets as this customer: staff only.
+    const actor = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
+    if (!actor || actor.role === 'CUSTOMER') {
+      return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 })
     }
 
     const customer = await prisma.user.findUnique({

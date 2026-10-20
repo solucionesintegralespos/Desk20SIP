@@ -53,7 +53,9 @@ export default async function TicketDetailPage({
           email: true,
         }
       },
+      // Customers never receive internal notes, not even in the page data.
       messages: {
+        where: user.role === 'CUSTOMER' ? { isInternal: false } : undefined,
         include: {
           author: {
             select: {
@@ -125,6 +127,7 @@ export default async function TicketDetailPage({
           <MessageForm 
             ticketId={ticket.id}
             currentUserId={session.user.id}
+            canWriteInternal={user.role !== 'CUSTOMER'}
           />
         </div>
 

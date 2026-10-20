@@ -4,13 +4,16 @@ import { useState } from 'react'
 import { Send, Paperclip, Sparkles, File as FileIcon, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'react-hot-toast'
+import { acceptFiles, UploadError, UPLOAD_ACCEPT, MAX_UPLOAD_MB } from '@/lib/upload-limits'
 
 interface MessageFormProps {
   ticketId: string
   currentUserId: string
+  /** Customers cannot write internal notes; the API enforces it too. */
+  canWriteInternal?: boolean
 }
 
-export default function MessageForm({ ticketId, currentUserId }: MessageFormProps) {
+export default function MessageForm({ ticketId, currentUserId, canWriteInternal = true }: MessageFormProps) {
   const router = useRouter()
   const [content, setContent] = useState('')
   const [isInternal, setIsInternal] = useState(false)
@@ -18,11 +21,17 @@ export default function MessageForm({ ticketId, currentUserId }: MessageFormProp
   const [aiLoading, setAiLoading] = useState(false)
   const [attachments, setAttachments] = useState<File[]>([])
 
+  // Files over the limit or of an unsupported type are refused here, with a warning,
+  // before any upload starts; the server enforces the same rules.
+  const addFiles = (files: File[]) => {
+    const { accepted, rejected } = acceptFiles(files)
+    rejected.forEach(reason => toast.error(reason, { duration: 8000 }))
+    if (accepted.length) setAttachments(prev => [...prev, ...accepted])
+  }
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles = Array.from(e.target.files)
-      setAttachments(prev => [...prev, ...newFiles])
-    }
+    if (e.target.files) addFiles(Array.from(e.target.files))
+    // Allow choosing the same file again after removing it.
+    e.target.value = ''
   }
 
   const removeAttachment = (index: number) => {
@@ -45,9 +54,7 @@ export default function MessageForm({ ticketId, currentUserId }: MessageFormProp
       }
     }
 
-    if (newFiles.length > 0) {
-      setAttachments(prev => [...prev, ...newFiles]);
-    }
+    if (newFiles.length > 0) addFiles(newFiles);
   };
 
   const uploadFiles = async (files: File[]): Promise<string[]> => {
@@ -63,14 +70,16 @@ export default function MessageForm({ ticketId, currentUserId }: MessageFormProp
           body: formData,
         })
         
-        if (response.ok) {
-          const data = await response.json()
-          uploadedUrls.push(data.url)
-        } else {
-          console.error('Error al subir archivo:', await response.text())
+        if (!response.ok) {
+          const detail = await response.json().catch(() => null)
+          throw new UploadError(detail?.error || `No se pudo subir «${file.name}».`)
         }
+        const data = await response.json()
+        uploadedUrls.push(data.url)
       } catch (error) {
+        if (error instanceof UploadError) throw error
         console.error('Error uploading file:', error)
+        throw new UploadError(`No se pudo subir «${file.name}». Revisa la conexión e inténtalo de nuevo.`)
       }
     }
     
@@ -152,7 +161,7 @@ export default function MessageForm({ ticketId, currentUserId }: MessageFormProp
       router.refresh()
     } catch (error) {
       console.error('Error sending message:', error)
-      toast.error('Error al enviar el mensaje')
+      toast.error(error instanceof UploadError ? error.message : 'Error al enviar el mensaje', { duration: 8000 })
     } finally {
       setLoading(false)
       setAiLoading(false)
@@ -188,6 +197,7 @@ export default function MessageForm({ ticketId, currentUserId }: MessageFormProp
                 onChange={handleFileChange}
                 className="hidden"
                 id="message-file-upload"
+                accept={UPLOAD_ACCEPT}
               />
               <label
                 htmlFor="message-file-upload"
@@ -195,10 +205,11 @@ export default function MessageForm({ ticketId, currentUserId }: MessageFormProp
               >
                 <Paperclip className="h-5 w-5" />
                 <span className="text-sm">Adjuntar archivo</span>
+                <span className="text-xs text-gray-400">(máx. {MAX_UPLOAD_MB} MB)</span>
               </label>
             </div>
             
-            {!content.toLowerCase().includes('@ia') && (
+            {canWriteInternal && !content.toLowerCase().includes('@ia') && (
               <label className="flex items-center space-x-2 cursor-pointer">
                 <input
                   type="checkbox"

@@ -2,8 +2,12 @@ import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
+import { authenticator } from 'otplib'
+import { rateLimitAll, clientIp, LOGIN_LIMITS, TWO_FACTOR_LIMITS } from '@/lib/rate-limit'
 
 export const INACTIVE_USER = 'USUARIO_INACTIVO'
+export const TOO_MANY_ATTEMPTS = 'DEMASIADOS_INTENTOS'
+export const TWO_FACTOR_REQUIRED = 'CODIGO_2FA_INVALIDO'
 
 // Cookie transport follows the deployment URL, including local HTTP on the LAN.
 const secureCookies = process.env.NEXTAUTH_URL
@@ -17,13 +21,17 @@ export const authOptions: NextAuthOptions = {
       name: 'Credentials',
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
+        password: { label: "Password", type: "password" },
+        twoFactorCode: { label: "Código 2FA", type: "text" }
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         // IMPORTANTE: El login NO debe verificar REGISTRATION_ENABLED
         // Esta variable solo controla el REGISTRO de nuevos usuarios, no el acceso
         if (!credentials?.email || !credentials?.password) {
           return null
+        }
+        if (!rateLimitAll(LOGIN_LIMITS(credentials.email, clientIp(req?.headers))).ok) {
+          throw new Error(TOO_MANY_ATTEMPTS)
         }
 
         const user = await prisma.user.findUnique({
@@ -48,6 +56,16 @@ export const authOptions: NextAuthOptions = {
         // Checked after the password so the message never reveals which accounts exist.
         if (!user.active) {
           throw new Error(INACTIVE_USER)
+        }
+
+        // Two-factor is enforced here, on the server: the separate pre-check endpoints only drive
+        // the login screen and must not be the only gate.
+        if (user.twoFactorEnabled) {
+          const code = credentials.twoFactorCode?.trim() || ''
+          if (!rateLimitAll(TWO_FACTOR_LIMITS(user.email)).ok) throw new Error(TOO_MANY_ATTEMPTS)
+          if (!user.twoFactorSecret || !/^\d{6}$/.test(code) || !authenticator.verify({ token: code, secret: user.twoFactorSecret })) {
+            throw new Error(TWO_FACTOR_REQUIRED)
+          }
         }
 
         return {

@@ -93,6 +93,21 @@ propia cuenta ni al último administrador activo. **Requiere la columna `User.ac
 ejecuta `npm run prisma:push` o aplica `supabase/migrations/202610190001_user_active.sql`; sin ella el inicio de sesión falla.
 Validación: `npm run test:user-active`.
 
+Seguridad: el código de doble factor se verifica dentro del inicio de sesión (no basta la contraseña);
+los intentos de inicio de sesión, códigos 2FA, registro y formulario de contacto tienen límite por cuenta y
+dirección (en memoria, por servidor). Los mensajes de un ticket solo los ve y escribe quien tiene acceso al
+ticket, y los clientes nunca reciben notas internas. El enlace público de un cliente solo lo consulta el
+personal. Los adjuntos se guardan en `storage/uploads` (o `UPLOAD_DIR`), fuera de `public`, con límite de
+30 MB, solo tipos conocidos (imágenes, PDF, Office, TXT, CSV, ZIP, MP4) y descarga con sesión; el logo de la
+organización sigue siendo público. Para mover los adjuntos antiguos de `public/uploads`: `npm run uploads:migrate`
+con el servidor detenido. `/api/seed/tickets` queda solo para administradores y fuera de producción.
+Validación: `npm run test:security`.
+
+Programación carga solo la semana visible (y el evento de un recordatorio al abrirlo desde el enlace).
+Con el mouse se puede arrastrar un evento a otro día o a otro ingeniero; al cambiar de fila se reemplaza
+ese ingeniero y se conservan los demás. Los técnicos son obligatorios al crear un ticket: si falta, el
+selector se marca en rojo al intentar crearlo.
+
 Después de actualizar: `npm run prisma:push` y `npm run service:seed`.
 La importación de plantillas conserva los cambios que ya existan en SIP SOPORTE.
 Para validar reglas y persistencia en PostgreSQL: `npm run test:service`.

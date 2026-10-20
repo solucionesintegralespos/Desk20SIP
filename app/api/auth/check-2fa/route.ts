@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
+import { rateLimitAll, clientIp, tooManyRequests, LOGIN_LIMITS } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json()
 
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
       return NextResponse.json(
         { error: 'Email y contraseña son requeridos' },
         { status: 400 }
       )
     }
+    // This endpoint checks passwords too, so it shares the sign-in attempt limits.
+    const limit = rateLimitAll(LOGIN_LIMITS(email, clientIp(request.headers)))
+    if (!limit.ok) return tooManyRequests(limit.retryAfter)
 
     const user = await prisma.user.findUnique({
       where: { email },

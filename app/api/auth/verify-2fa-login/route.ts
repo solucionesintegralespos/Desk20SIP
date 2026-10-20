@@ -2,17 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { authenticator } from 'otplib'
+import { rateLimitAll, clientIp, tooManyRequests, LOGIN_LIMITS, TWO_FACTOR_LIMITS } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
     const { email, password, twoFactorCode } = await request.json()
 
-    if (!email || !password || !twoFactorCode) {
+    if (typeof email !== 'string' || typeof password !== 'string' || typeof twoFactorCode !== 'string' || !email || !password || !twoFactorCode) {
       return NextResponse.json(
         { error: 'Todos los campos son requeridos' },
         { status: 400 }
       )
     }
+    // Six-digit codes are guessable without a limit; attempts are shared with the sign-in.
+    const limit = rateLimitAll([...LOGIN_LIMITS(email, clientIp(request.headers)), ...TWO_FACTOR_LIMITS(email)])
+    if (!limit.ok) return tooManyRequests(limit.retryAfter)
 
     const user = await prisma.user.findUnique({
       where: { email },

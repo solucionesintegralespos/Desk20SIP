@@ -3,7 +3,7 @@
 import { useId, useRef, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 
-export default function TechnicianPicker({ agents, value, onChange, disabled = false, label: title = 'Técnicos asignados', required = true, locked = [], selectAll = true }: {
+export default function TechnicianPicker({ agents, value, onChange, disabled = false, label: title = 'Técnicos asignados', required = true, locked = [], selectAll = true, error }: {
   agents: Array<{ id: string; name: string | null; email?: string | null }>
   value: string[]
   onChange: (ids: string[]) => void
@@ -14,6 +14,8 @@ export default function TechnicianPicker({ agents, value, onChange, disabled = f
   locked?: string[]
   /** Shows a one-click button to assign every technician. */
   selectAll?: boolean
+  /** Validation message shown under the control; also marks it invalid. */
+  error?: string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -37,9 +39,9 @@ export default function TechnicianPicker({ agents, value, onChange, disabled = f
     <legend id={`${id}-label`} className="mb-2 text-sm font-medium text-gray-700">{title}{required && <span className="text-red-600" aria-hidden="true"> *</span>}</legend>
     <div className="flex min-w-0 gap-2">
     <button ref={trigger} type="button" aria-labelledby={`${id}-label ${id}-summary`}
-      aria-expanded={open} aria-controls={`${id}-options`}
+      aria-expanded={open} aria-controls={`${id}-options`} aria-invalid={error ? true : undefined}
       onClick={() => { if (open) close(); else setOpen(true) }}
-      className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50">
+      className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 ${error ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-300'}`}>
       <span id={`${id}-summary`} className="min-w-0 flex-1 truncate" title={summary}>
         {summary || 'Seleccionar técnicos…'}
       </span>
@@ -51,6 +53,7 @@ export default function TechnicianPicker({ agents, value, onChange, disabled = f
       {allSelected ? 'Quitar todos' : 'Todos'}
     </button>}
     </div>
+    {error && <p role="alert" className="mt-1 text-xs font-medium text-red-600">{error}</p>}
     {open && <div id={`${id}-options`} className="mt-2 overflow-hidden rounded-lg border border-gray-300 bg-white shadow-sm">
       <div className="relative border-b p-2">
         <Search aria-hidden="true" className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />

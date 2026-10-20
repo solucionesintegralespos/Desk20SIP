@@ -1,18 +1,32 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { serviceDay } from '@/lib/support/order-display';
 import { serviceUser, serviceError, ServiceError } from '@/lib/support/server';
 import { eventSchema, eventTechIds, repeatSchema, repeatDates, repeatConflict } from '@/lib/schedule';
 import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
-export async function GET() {
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+// Events are returned for one date range (the visible week by default) instead of the whole
+// history; `include` adds a single event by id so a reminder link can open it.
+export async function GET(request: Request) {
   try {
     await serviceUser();
+    const params = new URL(request.url).searchParams;
+    const today = serviceDay(new Date().toISOString());
+    const from = DATE.test(params.get('from') || '') ? params.get('from')! : today;
+    const to = DATE.test(params.get('to') || '') ? params.get('to')! : from;
+    if (to < from) throw new ServiceError('Rango de fechas inválido');
+    const include = params.get('include') || '';
     const [records, engineers, clients] = await Promise.all([
-      prisma.serviceRecord.findMany({ where: { kind: 'schedule' }, orderBy: { createdAt: 'asc' } }),
+      prisma.$queryRaw<{ id: string; revision: number; payload: Prisma.JsonValue }[]>(Prisma.sql`
+        SELECT "id", "revision", "payload" FROM "ServiceRecord"
+        WHERE "kind" = 'schedule' AND (("payload"->>'date' >= ${from} AND "payload"->>'date' <= ${to}) OR "id" = ${include})
+        ORDER BY "createdAt" ASC`),
       prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] }, active: true }, select: { id: true, name: true, email: true, avatar: true }, orderBy: { name: 'asc' } }),
       prisma.user.findMany({ where: { role: 'CUSTOMER' }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } }),
     ]);
-    return Response.json({ events: records.map(record => ({ ...record.payload as object, id: record.id, revision: record.revision })), engineers, clients });
+    return Response.json({ events: records.map(record => ({ ...record.payload as object, id: record.id, revision: record.revision })), engineers, clients, from, to });
   } catch (error) { return serviceError(error); }
 }
 

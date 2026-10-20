@@ -8,6 +8,7 @@ import { orderPdf, orderStatusLabels, bogotaDateTime, type OrderPdfData } from '
 import { orderPdfUrl } from '@/lib/order-link'
 import type { WorkOrder, ChecklistRun } from '@/lib/support/model'
 import { orderTechIds } from '@/lib/support/order-display'
+import { uploadPath } from '@/lib/uploads'
 
 export type OrderEmailStatus = 'pending' | 'sent' | 'failed' | 'skipped'
 // `message` is shown to staff, so it never carries SMTP details.
@@ -22,13 +23,15 @@ const emailSchema = z.string().trim().email().max(254)
 const logId = (orderId: string) => `order-email:${orderId}`
 const MAX_LOGO_BYTES = 512 * 1024
 
-// Only files already served from /public are embedded: remote URLs could reach
+// Only local files (uploads or /public/brand) are embedded: remote URLs could reach
 // internal hosts, and oversized uploads would bloat every email.
 async function brandLogo(orgLogo: string) {
   const path = orgLogo || '/brand/sip-logo-mail.png'
   const match = /^\/(uploads|brand)\/([a-zA-Z0-9._-]+)$/.exec(path)
   if (!match || match[2].includes('..')) return undefined
-  const file = join(process.cwd(), 'public', match[1], match[2])
+  // Uploads may live in the private store or the legacy public folder.
+  const file = match[1] === 'uploads' ? uploadPath(match[2]) : join(process.cwd(), 'public', match[1], match[2])
+  if (!file) return undefined
   try {
     if ((await stat(file)).size > MAX_LOGO_BYTES) return undefined
     const data = await readFile(file)

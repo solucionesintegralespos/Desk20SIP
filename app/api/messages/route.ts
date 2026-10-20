@@ -4,6 +4,20 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendEmail, getTicketReplyEmailTemplate } from '@/lib/email'
 
+const STAFF_TYPES = ['COMMENT', 'NOTE', 'EMAIL', 'WHATSAPP'] as const
+
+// Staff work on every ticket; a customer only on their own, and never sees internal notes.
+async function ticketAccess(ticketId: unknown, userId: string) {
+  if (typeof ticketId !== 'string' || !ticketId) return null
+  const [user, ticket] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { role: true } }),
+    prisma.ticket.findUnique({ where: { id: ticketId }, select: { id: true, customerId: true } }),
+  ])
+  if (!user || !ticket) return null
+  if (user.role === 'CUSTOMER' && ticket.customerId !== userId) return null
+  return { staff: user.role !== 'CUSTOMER', ticket }
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -17,19 +31,29 @@ export async function POST(request: Request) {
 
     const { ticketId, content, isInternal, type, attachments } = await request.json()
 
-    if (!ticketId || !content) {
+    if (typeof content !== 'string' || !content.trim() || content.length > 20000) {
       return NextResponse.json(
         { error: 'Datos incompletos' },
         { status: 400 }
       )
     }
+    if (attachments !== undefined && (!Array.isArray(attachments) || attachments.length > 20 || attachments.some(a => typeof a !== 'string' || !/^\/uploads\/[a-zA-Z0-9._-]+$/.test(a)))) {
+      return NextResponse.json({ error: 'Adjuntos inválidos' }, { status: 400 })
+    }
+
+    const access = await ticketAccess(ticketId, session.user.id)
+    // Same answer for a missing ticket and someone else's ticket.
+    if (!access) return NextResponse.json({ error: 'Ticket no encontrado' }, { status: 404 })
+    // Customers write public comments only; system messages come from the server itself.
+    const internal = access.staff && isInternal === true
+    const messageType = access.staff && STAFF_TYPES.includes(type) ? type : 'COMMENT'
 
     const message = await prisma.message.create({
       data: {
         content,
-        isInternal: isInternal || false,
-        type: type || 'COMMENT',
-        ticketId,
+        isInternal: internal,
+        type: messageType,
+        ticketId: access.ticket.id,
         authorId: session.user.id,
         attachments: attachments || [],
       },
@@ -60,12 +84,12 @@ export async function POST(request: Request) {
 
     // Update ticket's updatedAt
     await prisma.ticket.update({
-      where: { id: ticketId },
+      where: { id: access.ticket.id },
       data: { updatedAt: new Date() }
     })
 
     // Enviar email al cliente si no es mensaje interno y el cliente tiene notificaciones activadas
-    if (!isInternal && message.ticket.customer.emailNotifications && message.author.role !== 'CUSTOMER') {
+    if (!internal && message.ticket.customer.emailNotifications && message.author.role !== 'CUSTOMER') {
       const emailTemplate = getTicketReplyEmailTemplate({
         customerName: message.ticket.customer.name || message.ticket.customer.email,
         ticketNumber: message.ticket.number,
@@ -112,8 +136,11 @@ export async function GET(request: Request) {
       )
     }
 
+    const access = await ticketAccess(ticketId, session.user.id)
+    if (!access) return NextResponse.json({ error: 'Ticket no encontrado' }, { status: 404 })
+
     const messages = await prisma.message.findMany({
-      where: { ticketId },
+      where: { ticketId, ...(access.staff ? {} : { isInternal: false }) },
       include: {
         author: {
           select: {
