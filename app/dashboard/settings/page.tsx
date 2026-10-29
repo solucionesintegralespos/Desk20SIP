@@ -69,10 +69,18 @@ export default async function SettingsPage() {
     prisma.user.count({ where: { role: 'ADMIN' } }),
   ])
 
-  // Obtener configuración de ChatGPT
-  const chatgptSetting = await prisma.setting.findUnique({
-    where: { key: 'chatgpt_api_key' }
+  // Obtener configuración de IA (Google Gemini / OpenAI)
+  const aiSettings = await prisma.setting.findMany({
+    where: {
+      key: {
+        in: ['chatgpt_api_key', 'gemini_api_key', 'ai_api_key', 'ai_provider', 'ai_model']
+      }
+    }
   })
+  const aiConfig = aiSettings.reduce((acc, setting) => {
+    acc[setting.key] = setting.value
+    return acc
+  }, {} as Record<string, string>)
 
   // Obtener configuracion de Organizacion
   const orgSettings = await prisma.setting.findMany({
@@ -162,8 +170,12 @@ export default async function SettingsPage() {
               userId={user.id}
             />
 
-            {/* Integración ChatGPT */}
-            <ChatGPTSettings initialApiKey={chatgptSetting?.value} />
+            {/* Integración Inteligencia Artificial (Gemini / ChatGPT) */}
+            <ChatGPTSettings
+              initialApiKey={aiConfig.ai_api_key || aiConfig.gemini_api_key || aiConfig.chatgpt_api_key || ''}
+              initialProvider={aiConfig.ai_provider || 'auto'}
+              initialModel={aiConfig.ai_model || ''}
+            />
 
             {/* Configuración General */}
             <GeneralSettings

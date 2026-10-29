@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { generateAIResponse } from '@/lib/ai'
 
 export async function POST(request: Request) {
   try {
@@ -55,19 +56,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // Obtener la API key de ChatGPT
-    const apiKeySetting = await prisma.setting.findUnique({
-      where: { key: 'chatgpt_api_key' }
-    })
-
-    if (!apiKeySetting || !apiKeySetting.value) {
-      return NextResponse.json(
-        { error: 'API key de ChatGPT no configurada' },
-        { status: 400 }
-      )
-    }
-
-    // Construir el contexto del ticket para ChatGPT
+    // Construir el contexto del ticket para la IA
     const ticketContext = `
 Información del Ticket:
 - Número: #${ticket.number}
@@ -75,7 +64,7 @@ Información del Ticket:
 - Descripción inicial: ${ticket.description}
 - Prioridad: ${ticket.priority}
 - Estado: ${ticket.status}
-- Cliente: ${ticket.customer.name || ticket.customer.email}
+- Cliente: ${ticket.customer?.name || ticket.customer?.email || 'No especificado'}
 
 Historial de mensajes:
 ${ticket.messages.map((msg, index) => `
@@ -88,19 +77,7 @@ Nuevo mensaje del agente:
 ${userMessage}
 `.trim()
 
-    // Llamar a la API de ChatGPT
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKeySetting.value}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `Eres un asistente virtual de soporte técnico especializado en ayudar a los agentes de atención al cliente. 
+    const systemPrompt = `Eres un asistente virtual de soporte técnico especializado en ayudar a los agentes de atención al cliente. 
 Tu tarea es analizar el contexto completo del ticket de soporte y proporcionar respuestas útiles, profesionales y precisas.
 
 Cuando te pidan ayuda:
@@ -112,33 +89,21 @@ Cuando te pidan ayuda:
 6. Si hay información técnica, explícala de manera comprensible
 
 Tu respuesta será visible para el agente, quien puede usarla como borrador o guía para responder al cliente.`
-          },
-          {
-            role: 'user',
-            content: ticketContext
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 1000
-      })
+
+    const result = await generateAIResponse({
+      systemPrompt,
+      userPrompt: ticketContext,
+      temperature: 0.7,
+      maxTokens: 1000
     })
 
-    if (!openaiResponse.ok) {
-      const errorData = await openaiResponse.json()
-      console.error('Error de OpenAI:', errorData)
-      return NextResponse.json(
-        { error: 'Error al consultar a ChatGPT' },
-        { status: 500 }
-      )
-    }
-
-    const data = await openaiResponse.json()
-    const aiResponse = data.choices[0].message.content
+    const aiResponse = result.text
+    const providerLabel = result.provider === 'gemini' ? 'Google Gemini' : 'ChatGPT'
 
     // Crear un mensaje automático con la respuesta de la IA
     const aiMessage = await prisma.message.create({
       data: {
-        content: `🤖 **Asistente IA**:\n\n${aiResponse}`,
+        content: `🤖 **Asistente IA (${providerLabel})**:\n\n${aiResponse}`,
         isInternal: true, // Siempre como nota interna
         type: 'COMMENT',
         ticketId,
@@ -166,13 +131,15 @@ Tu respuesta será visible para el agente, quien puede usarla como borrador o gu
     return NextResponse.json({ 
       success: true,
       message: aiMessage,
-      aiResponse 
+      aiResponse,
+      provider: result.provider,
+      model: result.model
     }, { status: 200 })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error al procesar mensaje con IA:', error)
     return NextResponse.json(
-      { error: 'Error al procesar mensaje con IA' },
+      { error: error?.message || 'Error al procesar mensaje con IA' },
       { status: 500 }
     )
   }

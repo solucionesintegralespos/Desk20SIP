@@ -72,7 +72,26 @@ export async function POST(request: Request) {
       )
     }
 
-    const { key, value } = await request.json()
+    const body = await request.json()
+
+    // Soporte para guardar múltiples configuraciones a la vez
+    if (body.settings && typeof body.settings === 'object') {
+      const entries = Object.entries(body.settings)
+      const results = []
+      for (const [key, val] of entries) {
+        if (!key) continue
+        const stringVal = val === null || val === undefined ? '' : String(val)
+        const updated = await prisma.setting.upsert({
+          where: { key },
+          update: { value: stringVal },
+          create: { key, value: stringVal },
+        })
+        results.push(updated)
+      }
+      return NextResponse.json({ success: true, count: results.length, settings: results })
+    }
+
+    const { key, value } = body
 
     if (!key) {
       return NextResponse.json(
@@ -84,8 +103,8 @@ export async function POST(request: Request) {
     // Crear o actualizar configuración
     const setting = await prisma.setting.upsert({
       where: { key },
-      update: { value },
-      create: { key, value },
+      update: { value: value === null || value === undefined ? '' : String(value) },
+      create: { key, value: value === null || value === undefined ? '' : String(value) },
     })
 
     return NextResponse.json(setting)
