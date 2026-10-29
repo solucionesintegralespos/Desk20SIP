@@ -144,17 +144,17 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
 
   const uploadFiles = async (files: File[]): Promise<string[]> => {
     const uploadedUrls: string[] = []
-    
+
     for (const file of files) {
       const formData = new FormData()
       formData.append('file', file)
-      
+
       try {
         const response = await fetch('/api/upload', {
           method: 'POST',
           body: formData,
         })
-        
+
         if (!response.ok) {
           const detail = await response.json().catch(() => null)
           throw new UploadError(detail?.error || `No se pudo subir «${file.name}».`)
@@ -167,7 +167,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
         throw new UploadError(`No se pudo subir «${file.name}». Revisa la conexión e inténtalo de nuevo.`)
       }
     }
-    
+
     return uploadedUrls
   }
 
@@ -196,8 +196,14 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
         const data = await response.json()
         setFormData({ ...formData, description: data.improvedText })
       } else {
-        const errorData = await response.json()
-        setError(errorData.error || 'Error al mejorar el texto')
+        let errorMsg = 'Error al mejorar el texto'
+        try {
+          const errorData = await response.json()
+          errorMsg = errorData.error || errorMsg
+        } catch {
+          errorMsg = `Error del servidor (${response.status} ${response.statusText || 'Timeout'}). Por favor verifica la API Key en Configuración.`
+        }
+        setError(errorMsg)
       }
     } catch (error) {
       console.error('Error improving text:', error)
@@ -220,7 +226,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
     try {
       // Subir archivos si hay
       const attachmentUrls = await uploadFiles(attachments)
-      
+
       const response = await fetch('/api/tickets', {
         method: 'POST',
         headers: {
@@ -258,7 +264,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
   return (
     <div className="bg-white rounded-lg shadow">
       <div className="p-6 border-b">
-        <Link 
+        <Link
           href={ticketsListHref}
           className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-4"
         >
@@ -449,7 +455,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Archivos Adjuntos
           </label>
-          
+
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-400 transition">
             <input
               type="file"
@@ -488,9 +494,9 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
                     >
                       {isImage ? (
                         <div className="aspect-square sm:aspect-video w-full bg-gray-100 flex items-center justify-center overflow-hidden">
-                          <img 
-                            src={URL.createObjectURL(file)} 
-                            alt="Preview" 
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt="Preview"
                             className="w-full h-full object-cover"
                           />
                         </div>

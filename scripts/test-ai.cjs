@@ -47,24 +47,24 @@ const { detectProvider, getAIConfig } = require('../lib/ai.ts');
 
 async function runTests() {
   console.log('--- Probando detección de proveedores ---');
-  
+
   // Gemini keys
   assert.equal(detectProvider('AIzaSyC1234567890abcdef'), 'gemini', 'Clave que empieza con AIza debe ser gemini');
   assert.equal(detectProvider('AIzaSyD-abc_1234567890123456789012345678'), 'gemini');
   assert.equal(detectProvider('AQ.Ab8RN1234567890abcdefHYEQ'), 'gemini', 'Clave que empieza con AQ. debe ser gemini');
-  
+
   // OpenAI keys
   assert.equal(detectProvider('sk-proj-1234567890'), 'openai', 'Clave que empieza con sk- debe ser openai');
   assert.equal(detectProvider('sk-1234567890'), 'openai');
-  
+
   // Preferred provider overrides
   assert.equal(detectProvider('random_key', 'gemini'), 'gemini');
   assert.equal(detectProvider('random_key', 'openai'), 'openai');
-  
+
   console.log('✓ Detección de proveedores exitosa');
 
   console.log('--- Probando resolución de configuración de IA ---');
-  
+
   // Caso 1: Usuario guardó clave Gemini en el campo antiguo chatgpt_api_key
   mockSettings = {
     chatgpt_api_key: 'AIzaSyExistingGeminiKeyInDatabase123456'
@@ -72,7 +72,7 @@ async function runTests() {
   let config = await getAIConfig();
   assert.equal(config.provider, 'gemini', 'Debe detectar automáticamente Gemini aunque esté guardada en chatgpt_api_key');
   assert.equal(config.apiKey, 'AIzaSyExistingGeminiKeyInDatabase123456');
-  assert.equal(config.model, 'gemini-3.8-flash');
+  assert.equal(config.model, 'gemini-2.0-flash');
   console.log('✓ Detección retroactiva de Gemini en chatgpt_api_key exitosa');
 
   // Caso 2: Configuración explícita de Gemini

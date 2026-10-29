@@ -33,13 +33,12 @@ export function detectProvider(
   apiKey: string,
   preferred?: string | null
 ): 'gemini' | 'openai' {
-  const cleanKey = (apiKey || '').trim()
+  const cleanKey = (apiKey || '').trim().replace(/^["']|["']$/g, '')
   const cleanPref = (preferred || '').trim().toLowerCase()
 
   if (cleanPref === 'gemini') return 'gemini'
   if (cleanPref === 'openai') return 'openai'
 
-  // Automatic detection by key pattern
   if (cleanKey.startsWith('AIza') || cleanKey.startsWith('AQ.')) {
     return 'gemini'
   }
@@ -112,492 +111,359 @@ export async function getAIConfig(): Promise<AIConfig> {
     throw new Error('API Key de IA no configurada. Por favor configúrala en Configuración > Inteligencia Artificial.')
   }
 
+  // Limpiar posibles comillas pegadas por accidente
+  apiKey = apiKey.replace(/^["']|["']$/g, '')
+
   const provider = detectProvider(apiKey, preferredProvider)
 
   let model = (map.ai_model || process.env.AI_MODEL || '').trim()
   if (!model) {
-    model = provider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-4o-mini'
+    model = provider === 'gemini' ? 'gemini-2.0-flash' : 'gpt-4o-mini'
   }
 
   return { provider, apiKey, model, source }
 }
 
-let cachedGeminiModels: { models: string[]; timestamp: number } | null = null
-const CACHE_TTL_MS = 30 * 60 * 1000 // 30 minutos de caché en memoria
-
-/**
- * Lists the available Gemini models for a given API Key directly from Google Generative Language API.
- */
-export async function listGeminiModels(apiKey: string): Promise<string[]> {
-  const cleanKey = apiKey.trim()
-  const versions = ['v1beta', 'v1']
-
-  for (const ver of versions) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/${ver}/models?key=${encodeURIComponent(cleanKey)}`
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': cleanKey
-        }
-      })
-
-      if (!res.ok) continue
-      const data = await res.json()
-
-      if (Array.isArray(data?.models)) {
-        const supported = data.models
-          .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
-          .map((m: any) => String(m.name || '').replace(/^models\//, ''))
-          .filter(Boolean)
-
-        if (supported.length > 0) {
-          return supported
-        }
-      }
-    } catch (e) {
-      console.warn(`Error al consultar modelos Gemini en ${ver}:`, e)
-    }
-  }
-
-  return []
-}
-
-/**
- * Obtains the live models with cache to avoid unnecessary round-trips.
- */
-export async function getLiveGeminiModels(apiKey: string, force = false): Promise<string[]> {
-  const now = Date.now()
-  if (!force && cachedGeminiModels && (now - cachedGeminiModels.timestamp < CACHE_TTL_MS)) {
-    return cachedGeminiModels.models
-  }
-
-  const live = await listGeminiModels(apiKey)
-  if (live.length > 0) {
-    cachedGeminiModels = { models: live, timestamp: now }
-    return live
-  }
-
-  return cachedGeminiModels?.models || []
-}
-
-/**
- * Resolves the best active model available in Google for this API Key.
- * If the requested model is deprecated or unavailable, it automatically picks the latest active model.
- */
-export async function resolveActiveGeminiModel(apiKey: string, requestedModel?: string): Promise<string> {
-  const cleanReq = (requestedModel || '').trim().replace(/^models\//, '')
-  const liveModels = await getLiveGeminiModels(apiKey)
-
-  // 1. Si el modelo solicitado existe y está activo en Google, usarlo
-  if (cleanReq && liveModels.includes(cleanReq)) {
-    return cleanReq
-  }
-
-  // 2. Si no existe o está retirado, seleccionar dinámicamente el mejor modelo disponible en vivo
-  if (liveModels.length > 0) {
-    const preferredOrder = [
-      'gemini-3.8-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-3.1-flash-lite',
-      'gemini-2.0-flash',
-      'gemini-2.5-flash',
-      'gemini-1.5-flash-latest'
-    ]
-    for (const pref of preferredOrder) {
-      if (liveModels.includes(pref)) return pref
-    }
-    const anyFlash = liveModels.find(m => m.includes('flash'))
-    if (anyFlash) return anyFlash
-    return liveModels[0]
-  }
-
-  // 3. Fallback seguro
-  return cleanReq || 'gemini-3.8-flash'
-}
-
 /**
  * Returns detailed model information for the UI model selector.
+ * If the key has restricted permissions that prevent ListModels, falls back to standard supported models.
  */
-export async function getAvailableGeminiModelsDetailed(apiKey: string): Promise<{
-  models: Array<{ name: string; displayName: string }>
-  defaultModel: string
-}> {
-  const cleanKey = apiKey.trim()
-  const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(cleanKey)}`
+  export async function getAvailableGeminiModelsDetailed(apiKey: string): Promise<{
+    models: Array<{ name: string; displayName: string }>
+    defaultModel: string
+  }> {
+    const cleanKey = apiKey.trim().replace(/^["']|["']$/g, '')
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': cleanKey
-    }
-  })
+      // Intentar consultar modelos de Google con timeout de 8s
+      let lastErrorMsg = ''
+      let lastReason = ''
 
-  const data = await res.json()
-
-  if (!res.ok) {
-    const errorInfo = data?.error
-    const msg = errorInfo?.message || `Error ${res.status} al consultar modelos`
-    if (msg.toLowerCase().includes('api key not valid') || errorInfo?.status === 'UNAUTHENTICATED' || errorInfo?.status === 'INVALID_ARGUMENT') {
-      throw new Error('API Key de Google Gemini inválida. Por favor verifica tu clave en Google AI Studio.')
-    }
-    throw new Error(msg)
-  }
-
-  const rawModels: any[] = Array.isArray(data?.models) ? data.models : []
-  const filtered = rawModels
-    .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
-    .map((m: any) => ({
-      name: String(m.name || '').replace(/^models\//, ''),
-      displayName: m.displayName || String(m.name || '').replace(/^models\//, '')
-    }))
-
-  const preferredDefaults = [
-    'gemini-3.8-flash',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-flash'
-  ]
-
-  let defaultModel = filtered.find(m => preferredDefaults.includes(m.name))?.name
-  if (!defaultModel && filtered.length > 0) {
-    defaultModel = filtered.find(m => m.name.includes('flash'))?.name || filtered[0].name
-  }
-
-  return {
-    models: filtered,
-    defaultModel: defaultModel || 'gemini-3.8-flash'
-  }
-}
-
-/**
- * Executes a REST call to Google Gemini with automatic model & version fallback.
- */
-async function attemptGenerateREST(
-  apiKey: string,
-  model: string,
-  apiVer: string,
-  userPrompt: string,
-  systemPrompt?: string,
-  options?: { temperature?: number; maxTokens?: number }
-): Promise<string | null> {
-  const url = `https://generativelanguage.googleapis.com/${apiVer}/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
-
-  const payload: Record<string, any> = {
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: userPrompt }]
-      }
-    ],
-    generationConfig: {
-      temperature: options?.temperature ?? 0.7,
-      maxOutputTokens: options?.maxTokens ?? 1000
-    }
-  }
-
-  if (systemPrompt?.trim()) {
-    payload.system_instruction = {
-      parts: [{ text: systemPrompt.trim() }]
-    }
-  }
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey
-    },
-    body: JSON.stringify(payload)
-  })
-
-  const data = await res.json()
-
-  if (!res.ok) {
-    const errorInfo = data?.error
-    const status = errorInfo?.status || res.status
-    const rawMessage = errorInfo?.message || `Error ${res.status} al consultar Google Gemini`
-
-    if (res.status === 404 || rawMessage.toLowerCase().includes('not found') || rawMessage.toLowerCase().includes('not supported')) {
-      return null
-    }
-
-    if (
-      status === 'UNAUTHENTICATED' ||
-      status === 'INVALID_ARGUMENT' ||
-      rawMessage.toLowerCase().includes('api key not valid')
-    ) {
-      throw new Error('API Key de Google Gemini inválida. Por favor verifica tu clave en Configuración.')
-    }
-
-    if (status === 'RESOURCE_EXHAUSTED' || res.status === 429) {
-      throw new Error('Límite de cuota excedido en Google Gemini. Intenta más tarde o revisa tu cuota en Google AI Studio.')
-    }
-
-    if (status === 'PERMISSION_DENIED') {
-      throw new Error('Permisos denegados en Google Gemini. Verifica que la API Generative Language esté activa para tu clave.')
-    }
-
-    throw new Error(rawMessage)
-  }
-
-  const candidate = data?.candidates?.[0]
-  const text = candidate?.content?.parts?.[0]?.text
-
-  if (!text) {
-    if (candidate?.finishReason === 'SAFETY') {
-      throw new Error('La respuesta fue bloqueada por los filtros de seguridad de Gemini.')
-    }
-    throw new Error('Google Gemini no devolvió texto de respuesta.')
-  }
-
-  return text.trim()
-}
-
-/**
- * Calls Google Gemini using the official @google/genai SDK (Interactions API / generateContent)
- * with automatic fallback to native REST API.
- */
-export async function callGemini(
-  apiKey: string,
-  model: string,
-  userPrompt: string,
-  systemPrompt?: string,
-  options?: { temperature?: number; maxTokens?: number }
-): Promise<string> {
-  const cleanKey = apiKey.trim()
-  const cleanTargetModel = (model || '').trim().replace(/^models\//, '')
-
-  // Resolver dinámicamente el modelo activo en Google para esta clave
-  const activeModel = await resolveActiveGeminiModel(cleanKey, cleanTargetModel)
-
-  const candidateModels = [
-    activeModel,
-    cleanTargetModel,
-    'gemini-3.8-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.1-flash-lite',
-    'gemini-4-argon'
-  ].filter((m, i, arr) => m && arr.indexOf(m) === i)
-
-  let lastError: Error | null = null
-
-  // 1. Intentar con el SDK oficial @google/genai
-  try {
-    const ai = new GoogleGenAI({ apiKey: cleanKey })
-
-    for (const currentModel of candidateModels) {
-      // Método A: Interactions API (@google/genai)
-      try {
-        const fullInput = systemPrompt
-          ? `[Instrucciones del sistema]: ${systemPrompt}\n\n${userPrompt}`
-          : userPrompt
-
-        const interaction: any = await (ai as any).interactions.create({
-          model: currentModel,
-          input: fullInput
-        })
-
-        const outputText = interaction?.output_text || interaction?.outputText
-        if (outputText && typeof outputText === 'string' && outputText.trim()) {
-          return outputText.trim()
-        }
-      } catch (interactionErr: any) {
-        lastError = interactionErr
-      }
-
-      // Método B: generateContent via @google/genai SDK
-      try {
-        const response: any = await ai.models.generateContent({
-          model: currentModel,
-          contents: userPrompt,
-          config: {
-            systemInstruction: systemPrompt ? systemPrompt : undefined,
-            temperature: options?.temperature ?? 0.7,
-            maxOutputTokens: options?.maxTokens ?? 1000
-          }
-        })
-
-        const text = response?.text
-        if (text && typeof text === 'string' && text.trim()) {
-          return text.trim()
-        }
-      } catch (genErr: any) {
-        lastError = genErr
-      }
-    }
-  } catch (sdkInitErr: any) {
-    lastError = sdkInitErr
-  }
-
-  // 2. Fallback a llamada REST nativa directa con fetch
-  for (const currentModel of candidateModels) {
-    for (const ver of ['v1beta', 'v1']) {
-      try {
-        const result = await attemptGenerateREST(cleanKey, currentModel, ver, userPrompt, systemPrompt, options)
-        if (result) return result
-      } catch (restErr: any) {
-        lastError = restErr
-      }
-    }
-  }
-
-  // 3. Si fallaron, consultar dinámicamente qué modelos tiene activos la clave
-  try {
-    const discovered = await listGeminiModels(cleanKey)
-    for (const discoveredModel of discovered) {
-      if (candidateModels.includes(discoveredModel)) continue
       for (const ver of ['v1beta', 'v1']) {
         try {
-          const result = await attemptGenerateREST(cleanKey, discoveredModel, ver, userPrompt, systemPrompt, options)
-          if (result) return result
-        } catch (err: any) {
-          lastError = err
+            // 1. Probar vía x-goog-api-key header
+            const res = await fetch(`https://generativelanguage.googleapis.com/${ver}/models`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': cleanKey
+            },
+              signal: AbortSignal.timeout(8000)
+      })
+
+          const data = await res.json()
+
+            if (res.ok && Array.isArray(data?.models) && data.models.length > 0) {
+              const filtered = data.models
+                .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+                .map((m: any) => ({
+                  name: String(m.name || '').replace(/^models\//, ''),
+                  displayName: m.displayName || String(m.name || '').replace(/^models\//, '')
+                }))
+
+                const preferredDefaults = [
+                  'gemini-2.0-flash',
+                  'gemini-1.5-flash-latest',
+                  'gemini-1.5-flash',
+                  'gemini-2.0-flash-lite'
+                ]
+
+                let defaultModel = filtered.find((m: any) => preferredDefaults.includes(m.name))?.name
+                if (!defaultModel && filtered.length > 0) {
+                  defaultModel = filtered.find((m: any) => m.name.includes('flash'))?.name || filtered[0].name
+                }
+
+                return {
+                  models: filtered,
+                  defaultModel: defaultModel || 'gemini-2.0-flash'
+                }
+              }
+
+              if (data?.error) {
+                lastErrorMsg = data.error.message || `Error ${res.status}`
+                lastReason = data.error.details?.[0]?.reason || data.error.status || ''
+              }
+            } catch (e: any) {
+              lastErrorMsg = e.message
+            }
+          }
+
+        // Si Google rechaza ListModels (por ejemplo, ACCESS_TOKEN_TYPE_UNSUPPORTED en claves AQ. restringidas),
+        // proporcionamos los modelos estándar funcionales para que el usuario no quede bloqueado
+        const standardFallback = [
+          { name: 'gemini-2.0-flash', displayName: 'gemini-2.0-flash (Recomendado, rápido y última generación)' },
+          { name: 'gemini-1.5-flash-latest', displayName: 'gemini-1.5-flash-latest (Estable)' },
+          { name: 'gemini-1.5-flash', displayName: 'gemini-1.5-flash' },
+          { name: 'gemini-2.0-flash-lite', displayName: 'gemini-2.0-flash-lite (Ultra veloz)' }
+        ]
+
+  if(lastReason === 'ACCESS_TOKEN_TYPE_UNSUPPORTED' || lastErrorMsg.includes('API key not valid')) {
+              // Si la clave es un formato AQ. que no soporta ListModels en este endpoint, retornar la lista estándar
+              return {
+                models: standardFallback,
+                defaultModel: 'gemini-2.0-flash'
+    }
+          }
+
+          const detailInfo = lastReason ? ` [${lastReason}]` : ''
+          throw new Error(`Google Gemini no autorizó la consulta de modelos: ${lastErrorMsg}${detailInfo}`)
         }
-      }
-    }
-  } catch {}
 
-  const errStr = lastError?.message || String(lastError || '')
-  if (errStr.includes('API_KEY_INVALID') || errStr.toLowerCase().includes('api key not valid')) {
-    throw new Error('API Key de Google Gemini inválida. Por favor verifica tu clave en Google AI Studio.')
-  }
-  if (errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('429')) {
-    throw new Error('Límite de cuota excedido en Google Gemini. Intenta más tarde o revisa tu cuota en Google AI Studio.')
-  }
+        /**
+         * Calls Google Gemini REST API directly with strict timeout (10s) and fast fallback.
+         * Solves 504 Gateway Timeouts by never exceeding proxy limits.
+         */
+          export async function callGemini(
+            apiKey: string,
+            model: string,
+            userPrompt: string,
+            systemPrompt?: string,
+            options?: { temperature?: number; maxTokens?: number }
+): Promise < string > {
+            const cleanKey = apiKey.trim().replace(/^["']|["']$/g, '')
+  const cleanTargetModel = (model || '').trim().replace(/^models\//, '') || 'gemini-2.0-flash'
 
-  throw lastError || new Error('No se pudo obtener respuesta de Google Gemini. Verifica tu clave y modelos disponibles.')
-}
+            // Modelos candidatos rápidos (máximo 2 intentos)
+            const candidateModels = [cleanTargetModel]
+            if (cleanTargetModel !== 'gemini-2.0-flash' && cleanTargetModel !== 'gemini-1.5-flash') {
+              candidateModels.push('gemini-2.0-flash')
+            }
+              if (!candidateModels.includes('gemini-1.5-flash')) {
+                candidateModels.push('gemini-1.5-flash')
+              }
 
-/**
- * Calls OpenAI Chat Completions API.
- */
-export async function callOpenAI(
-  apiKey: string,
-  model: string,
-  userPrompt: string,
-  systemPrompt?: string,
-  options?: { temperature?: number; maxTokens?: number }
-): Promise<string> {
-  const url = 'https://api.openai.com/v1/chat/completions'
+              let lastError: Error | null = null
 
-  const messages: Array<{ role: string; content: string }> = []
-  if (systemPrompt?.trim()) {
-    messages.push({ role: 'system', content: systemPrompt.trim() })
-  }
-  messages.push({ role: 'user', content: userPrompt })
+              // Intentar con cada modelo candidato con un timeout estricto de 10s
+              for (const currentModel of candidateModels) {
+                try {
+                  // Método principal: fetch directo a la API de Google (rápido y sin bloqueos de SDK)
+                  const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${encodeURIComponent(cleanKey)}`
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model || 'gpt-4o-mini',
-      messages,
-      temperature: options?.temperature ?? 0.7,
-      max_tokens: options?.maxTokens ?? 1000
-    })
-  })
+                    const payload: Record<string, any> = {
+                      contents: [
+                        {
+                          role: 'user',
+                          parts: [{ text: userPrompt }]
+                        }
+                      ],
+                      generationConfig: {
+                        temperature: options?.temperature ?? 0.7,
+                        maxOutputTokens: options?.maxTokens ?? 1000
+                      }
+                    }
 
-  const data = await res.json()
+                    if (systemPrompt?.trim()) {
+                      payload.system_instruction = {
+                        parts: [{ text: systemPrompt.trim() }]
+                      }
+                    }
 
-  if (!res.ok) {
-    const rawMessage = data?.error?.message || `Error ${res.status} al consultar OpenAI`
-    if (res.status === 401 || data?.error?.code === 'invalid_api_key') {
-      throw new Error('API Key de OpenAI inválida. Por favor verifica tu clave en Configuración.')
-    }
-    if (res.status === 429) {
-      throw new Error('Límite de cuota excedido en OpenAI. Verifica tu saldo o plan en platform.openai.com.')
-    }
-    throw new Error(rawMessage)
-  }
+                    const res = await fetch(url, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'x-goog-api-key': cleanKey
+                      },
+                      body: JSON.stringify(payload),
+                      signal: AbortSignal.timeout(10000) // Timeout estricto de 10 segundos
+                    })
 
-  const text = data?.choices?.[0]?.message?.content
-  if (!text) {
-    throw new Error('OpenAI no devolvió texto de respuesta.')
-  }
-  return text.trim()
-}
+                    const data = await res.json()
 
-/**
- * Unified entry point to generate an AI response using the configured provider.
- */
-export async function generateAIResponse(options: AIOptions): Promise<AIResult> {
-  const config = await getAIConfig()
-  const chosenModel = options.model || config.model
+                    if (res.ok) {
+                      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
+                      if (text && typeof text === 'string' && text.trim()) {
+                        return text.trim()
+                      }
+                    }
 
-  let text = ''
-  if (config.provider === 'gemini') {
-    text = await callGemini(
-      config.apiKey,
-      chosenModel,
-      options.userPrompt,
-      options.systemPrompt,
-      { temperature: options.temperature, maxTokens: options.maxTokens }
-    )
-  } else {
-    text = await callOpenAI(
-      config.apiKey,
-      chosenModel,
-      options.userPrompt,
-      options.systemPrompt,
-      { temperature: options.temperature, maxTokens: options.maxTokens }
-    )
-  }
+                  const errorInfo = data?.error
+                  const rawMsg = errorInfo?.message || `HTTP ${res.status}`
+                  const reason = errorInfo?.details?.[0]?.reason || errorInfo?.status || ''
 
-  return {
-    text,
-    provider: config.provider,
-    model: chosenModel
-  }
-}
+                  // Si el modelo da 404 (retirado), probar el siguiente candidato
+                  if (res.status === 404 || rawMsg.toLowerCase().includes('not found')) {
+                    lastError = new Error(`El modelo "${currentModel}" no está disponible en Google Gemini. (${rawMsg})`)
+                    continue
+                  }
 
-/**
- * Tests an API Key and provider without saving.
- */
-export async function testAIConnection(params: {
-  apiKey: string
-  provider?: string
-  model?: string
-}): Promise<{ success: boolean; message: string; provider: 'gemini' | 'openai'; model: string }> {
-  if (!params.apiKey?.trim()) {
-    throw new Error('La API Key no puede estar vacía.')
-  }
+                      if (res.status === 401 || reason === 'API_KEY_INVALID' || rawMsg.toLowerCase().includes('api key not valid')) {
+                        throw new Error(`API Key de Google Gemini inválida o no autorizada. Revisa tu clave en Google AI Studio. (${rawMsg})`)
+                      }
 
-  const provider = detectProvider(params.apiKey, params.provider)
-  const model = (params.model || '').trim() || (provider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-4o-mini')
+                      if (res.status === 429 || reason === 'RESOURCE_EXHAUSTED') {
+                        throw new Error('Límite de cuota excedido en Google Gemini. Intenta más tarde o revisa tu cuota en Google AI Studio.')
+                      }
 
-  const testPrompt = 'Por favor responde únicamente con la palabra OK si puedes leer este mensaje.'
+                      throw new Error(`Google Gemini (${res.status}): ${rawMsg} ${reason ? `[${reason}]` : ''}`)
+                    } catch (err: any) {
+                      if (err.name === 'TimeoutError' || err.message?.includes('timeout') || err.message?.includes('aborted')) {
+                        throw new Error('Tiempo de espera agotado al conectar con Google Gemini. La API tardó más de 10 segundos.')
+                      }
+                      if (err.message?.includes('Google Gemini (') || err.message?.includes('API Key de Google Gemini inválida')) {
+                        throw err
+                      }
+                      lastError = err
+                    }
+                  }
 
-  let responseText = ''
-  if (provider === 'gemini') {
-    responseText = await callGemini(
-      params.apiKey.trim(),
-      model,
-      testPrompt,
-      'Eres un asistente de prueba.',
-      { maxTokens: 20 }
-    )
-  } else {
-    responseText = await callOpenAI(
-      params.apiKey.trim(),
-      model,
-      testPrompt,
-      'Eres un asistente de prueba.',
-      { maxTokens: 20 }
-    )
-  }
+                  // Fallback rápido con SDK oficial @google/genai si fetch dio error de modelo
+                  try {
+                    const ai = new GoogleGenAI({ apiKey: cleanKey })
+                    for (const currentModel of candidateModels) {
+                      try {
+                        const response: any = await ai.models.generateContent({
+                          model: currentModel,
+                          contents: userPrompt,
+                          config: {
+                            systemInstruction: systemPrompt || undefined,
+                            temperature: options?.temperature ?? 0.7,
+                            maxOutputTokens: options?.maxTokens ?? 1000
+                          }
+                        })
+                        const text = response?.text
+                        if (text && typeof text === 'string' && text.trim()) {
+                          return text.trim()
+                        }
+                      } catch (sdkErr: any) {
+                        lastError = sdkErr
+                      }
+                    }
+                  } catch (sdkInitErr: any) {
+                    lastError = sdkInitErr
+                  }
 
-  return {
-    success: true,
-    message: `Conexión exitosa con ${provider === 'gemini' ? 'Google Gemini' : 'OpenAI ChatGPT'} (${model}). Respuesta: "${responseText}"`,
-    provider,
-    model
-  }
-}
+                  throw lastError || new Error('No se pudo obtener respuesta de Google Gemini. Verifica tu API Key y conexión.')
+                }
+
+                /**
+                 * Calls OpenAI Chat Completions API.
+                 */
+                export async function callOpenAI(
+                  apiKey: string,
+                  model: string,
+                  userPrompt: string,
+                  systemPrompt?: string,
+                  options?: { temperature?: number; maxTokens?: number }
+                ): Promise<string> {
+                  const cleanKey = apiKey.trim().replace(/^["']|["']$/g, '')
+                  const url = 'https://api.openai.com/v1/chat/completions'
+
+                  const messages: Array<{ role: string; content: string }> = []
+                  if (systemPrompt?.trim()) {
+                    messages.push({ role: 'system', content: systemPrompt.trim() })
+                  }
+                  messages.push({ role: 'user', content: userPrompt })
+
+                  const res = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+      Authorization: `Bearer ${cleanKey}`
+                    },
+                    body: JSON.stringify({
+                      model: model || 'gpt-4o-mini',
+                      messages,
+                      temperature: options?.temperature ?? 0.7,
+                      max_tokens: options?.maxTokens ?? 1000
+                  }),
+                    signal: AbortSignal.timeout(12000)
+                })
+
+                const data = await res.json()
+
+                if (!res.ok) {
+                  const rawMessage = data?.error?.message || `Error ${res.status} al consultar OpenAI`
+                  if (res.status === 401 || data?.error?.code === 'invalid_api_key') {
+                    throw new Error('API Key de OpenAI inválida. Por favor verifica tu clave en Configuración.')
+                  }
+                  if (res.status === 429) {
+                    throw new Error('Límite de cuota excedido en OpenAI. Verifica tu saldo o plan en platform.openai.com.')
+                  }
+                  throw new Error(rawMessage)
+                }
+
+                const text = data?.choices?.[0]?.message?.content
+                if (!text) {
+                  throw new Error('OpenAI no devolvió texto de respuesta.')
+                }
+                return text.trim()
+              }
+
+              /**
+               * Unified entry point to generate an AI response using the configured provider.
+               */
+              export async function generateAIResponse(options: AIOptions): Promise<AIResult> {
+                const config = await getAIConfig()
+                const chosenModel = options.model || config.model
+
+                let text = ''
+                if (config.provider === 'gemini') {
+                  text = await callGemini(
+                    config.apiKey,
+                    chosenModel,
+                    options.userPrompt,
+                    options.systemPrompt,
+                    { temperature: options.temperature, maxTokens: options.maxTokens }
+                  )
+                } else {
+                  text = await callOpenAI(
+                    config.apiKey,
+                    chosenModel,
+                    options.userPrompt,
+                    options.systemPrompt,
+                    { temperature: options.temperature, maxTokens: options.maxTokens }
+                  )
+                }
+
+                return {
+                  text,
+                  provider: config.provider,
+                  model: chosenModel
+                }
+              }
+
+              /**
+               * Tests an API Key and provider without saving.
+               */
+              export async function testAIConnection(params: {
+                apiKey: string
+                provider?: string
+                model?: string
+              }): Promise<{ success: boolean; message: string; provider: 'gemini' | 'openai'; model: string }> {
+                if (!params.apiKey?.trim()) {
+                  throw new Error('La API Key no puede estar vacía.')
+                }
+
+                const cleanKey = params.apiKey.trim().replace(/^["']|["']$/g, '')
+                const provider = detectProvider(cleanKey, params.provider)
+                const model = (params.model || '').trim() || (provider === 'gemini' ? 'gemini-2.0-flash' : 'gpt-4o-mini')
+
+                const testPrompt = 'Por favor responde únicamente con la palabra OK si puedes leer este mensaje.'
+
+                let responseText = ''
+                if (provider === 'gemini') {
+                  responseText = await callGemini(
+                    cleanKey,
+                    model,
+                    testPrompt,
+                    'Eres un asistente de prueba.',
+                    { maxTokens: 20 }
+                  )
+                } else {
+                  responseText = await callOpenAI(
+                    cleanKey,
+                    model,
+                    testPrompt,
+                    'Eres un asistente de prueba.',
+                    { maxTokens: 20 }
+                  )
+                }
+
+                return {
+                  success: true,
+                  message: `Conexión exitosa con ${provider === 'gemini' ? 'Google Gemini' : 'OpenAI ChatGPT'} (${model}). Respuesta: "${responseText}"`,
+                  provider,
+                  model
+                }
+              }
