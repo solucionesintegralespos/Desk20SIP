@@ -73,7 +73,7 @@ export default async function CustomersPage({
           }
         }
       },
-      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
       skip: (page - 1) * PER_PAGE,
       take: PER_PAGE,
     }),

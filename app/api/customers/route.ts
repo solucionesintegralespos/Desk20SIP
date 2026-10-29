@@ -166,15 +166,28 @@ export async function GET(request: Request) {
         location: true,
         address: true,
         createdAt: true,
+        organization: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
         _count: {
           select: {
             createdTickets: true,
           }
+        },
+        createdTickets: {
+          where: { status: 'OPEN' },
+          select: {
+            status: true,
+          }
         }
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      orderBy: [
+        { name: 'asc' },
+        { id: 'asc' }
+      ]
     })
 
     return NextResponse.json(customers)
