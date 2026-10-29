@@ -33,7 +33,7 @@ export async function GET(
     }
 
     const customer = await prisma.user.findUnique({
-      where: { 
+      where: {
         id: params.id,
         role: 'CUSTOMER'
       },
@@ -94,27 +94,38 @@ export async function PATCH(
     }
 
     const data = await request.json()
-    let email: string | undefined
+    let customerEmail: string | null | undefined
     if ('email' in data) {
-      if (typeof data.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) {
-        return NextResponse.json({ error: 'Ingresa un correo válido' }, { status: 400 })
+      if (typeof data.email === 'string' && data.email.trim()) {
+        const trimmedEmail = data.email.trim().toLowerCase()
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+          return NextResponse.json({ error: 'Ingresa un correo válido' }, { status: 400 })
+        }
+        const existing = await prisma.user.findFirst({
+          where: {
+            email: { equals: trimmedEmail, mode: 'insensitive' },
+            NOT: { id: params.id }
+          },
+          select: { id: true }
+        })
+        if (existing) return NextResponse.json({ error: 'El correo ya está registrado' }, { status: 409 })
+        customerEmail = trimmedEmail
+      } else {
+        customerEmail = null
       }
-      email = data.email.trim().toLowerCase()
-      const existing = await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' }, NOT: { id: params.id } }, select: { id: true } })
-      if (existing) return NextResponse.json({ error: 'El correo ya está registrado' }, { status: 409 })
     }
     if ('name' in data && (typeof data.name !== 'string' || !data.name.trim())) {
       return NextResponse.json({ error: 'El nombre del cliente es obligatorio' }, { status: 400 })
     }
 
     const customer = await prisma.user.update({
-      where: { 
+      where: {
         id: params.id,
         role: 'CUSTOMER'
       },
       data: {
         name: data.name,
-        ...(email !== undefined ? { email } : {}),
+        ...(customerEmail !== undefined ? { email: customerEmail } : {}),
         phone: data.phone,
         location: data.location,
         address: data.address,
@@ -174,7 +185,7 @@ export async function DELETE(
     }
 
     await prisma.user.delete({
-      where: { 
+      where: {
         id: params.id,
         role: 'CUSTOMER'
       }

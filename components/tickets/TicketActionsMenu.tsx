@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
 import TechnicianPicker from './TechnicianPicker'
 import { toast } from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
@@ -27,6 +28,8 @@ interface TicketActionsMenuProps {
 
 export default function TicketActionsMenu({ ticket, agents, onClose }: TicketActionsMenuProps) {
   const router = useRouter()
+  const { data: session } = useSession()
+  const isAdmin = session?.user?.role === 'ADMIN'
   const [selected, setSelected] = useState(ticket.assignments?.map(a => a.user.id) || (ticket.assignee ? [ticket.assignee.id] : []))
   const menuRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
@@ -104,11 +107,15 @@ export default function TicketActionsMenu({ ticket, agents, onClose }: TicketAct
           </button>
         ))}
 
-        <div className="border-t my-1"></div>
-        
-        <div className="p-3"><TechnicianPicker agents={agents} value={selected} onChange={setSelected} disabled={loading} />
-          <button type="button" disabled={loading || !selected.length} onClick={() => updateTicket({ assigneeIds: selected })} className="mt-2 px-3 py-2 bg-primary-600 text-white rounded disabled:opacity-50">Guardar asignación</button>
-        </div>
+        {isAdmin && (
+          <>
+            <div className="border-t my-1"></div>
+            <div className="p-3">
+              <TechnicianPicker agents={agents} value={selected} onChange={setSelected} disabled={loading} />
+              <button type="button" disabled={loading || !selected.length} onClick={() => updateTicket({ assigneeIds: selected })} className="mt-2 px-3 py-2 bg-primary-600 text-white rounded disabled:opacity-50">Guardar asignación</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

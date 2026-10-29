@@ -138,10 +138,30 @@ export default function TicketHeader({ ticket }: TicketHeaderProps) {
           </div>
         </div>
         
-        {session?.user.role !== 'CUSTOMER' && <div className="w-full md:w-72">
-          <TechnicianPicker agents={agents} value={selected} onChange={setSelected} disabled={updating} />
-          <button type="button" disabled={updating || !selected.length} onClick={handleAssigneeChange} className="mt-2 px-3 py-2 rounded bg-primary-600 text-white text-sm disabled:opacity-50">Guardar asignación</button>
-        </div>}
+        {session?.user.role !== 'CUSTOMER' && (
+          <div className="w-full md:w-72">
+            <TechnicianPicker
+              agents={agents}
+              value={selected}
+              onChange={setSelected}
+              disabled={updating || session?.user?.role !== 'ADMIN'}
+            />
+            {session?.user?.role === 'ADMIN' ? (
+              <button
+                type="button"
+                disabled={updating || !selected.length}
+                onClick={handleAssigneeChange}
+                className="mt-2 px-3 py-2 rounded bg-primary-600 text-white text-sm disabled:opacity-50"
+              >
+                Guardar asignación
+              </button>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                Solo los administradores pueden cambiar los técnicos asignados.
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

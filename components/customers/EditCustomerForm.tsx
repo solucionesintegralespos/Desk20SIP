@@ -41,7 +41,14 @@ export default function EditCustomerForm({ customer }: EditCustomerFormProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          location: formData.location.trim(),
+          address: formData.address.trim(),
+        }),
       })
 
       if (response.ok) {
@@ -114,14 +121,14 @@ export default function EditCustomerForm({ customer }: EditCustomerFormProps) {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Email
+            Email (Opcional)
           </label>
           <input
             type="email"
-            required
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            placeholder="cliente@ejemplo.com"
           />
         </div>
 

@@ -82,13 +82,23 @@ async function patch(id, data, expected = 200) {
   }
   assert.ok((await (await options()).json()).categories.some(c => c.id === category.id));
   assert.equal((await options()).status, 200);
-  await patch(ticket.id, { assigneeIds: [] }, 400);
   await patch(ticket.id, { status: 'SOLVED' }, 400);
+  await patch(ticket.id, { assignments: { deleteMany: {} } }, 400);
+  // Non-admin (tech2 is AGENT) cannot change assigned users:
+  await patch(ticket.id, { assigneeIds: [tech2.id] }, 403);
+  await patch(ticket.id, { assigneeId: tech1.id }, 403);
+  // Admin can change assigned users:
+  actor = admin;
+  await patch(ticket.id, { assigneeIds: [] }, 400);
   await patch(ticket.id, { assigneeId: null }, 400);
   await patch(ticket.id, { assigneeIds: [customer.id] }, 400);
-  await patch(ticket.id, { assignments: { deleteMany: {} } }, 400);
   let updated = await patch(ticket.id, { assigneeIds: [tech2.id] }); assert.equal(updated.assignments.length, 1); assert.equal(updated.assigneeId, tech2.id);
+  const assignLog = await db.message.findFirst({ where: { ticketId: ticket.id, type: 'SYSTEM', content: { startsWith: 'Usuarios asignados cambiados' } } });
+  assert.ok(assignLog, 'Assignment change log should be created');
+  assert.equal(assignLog.authorId, admin.id);
+  assert.ok(assignLog.content.includes('Antes:') && assignLog.content.includes('Después:'));
   updated = await patch(ticket.id, { assigneeId: tech1.id }); assert.equal(updated.assignments.length, 2);
+  actor = tech2;
   updated = await patch(ticket.id, { status: 'PENDING' }); assert.equal(updated.status, 'PENDING');
   assert.equal(await db.message.count({ where: { ticketId: ticket.id, type: 'SYSTEM' } }), 1);
   const closed = await patch(ticket.id, { status: 'CLOSED' }); assert.equal(closed.status, 'CLOSED');
@@ -142,7 +152,8 @@ async function patch(id, data, expected = 200) {
   edited = await customerPatch({ name: customer.name, phone: '222' }); assert.equal(edited.phone, '222'); assert.equal(edited.email, updatedEmail);
   await customerPatch({ email: admin.email }, 409);
   await customerPatch({ email: 'invalid' }, 400);
-  assert.equal((await db.user.findUniqueOrThrow({ where: { id: customer.id } })).email, updatedEmail);
+  edited = await customerPatch({ name: customer.name, email: '' }); assert.equal(edited.email, null);
+  assert.equal((await db.user.findUniqueOrThrow({ where: { id: customer.id } })).email, null);
   assert.equal((await db.ticket.findUniqueOrThrow({ where: { id: ticket.id } })).customerId, customer.id);
   actor = customer; await customerPatch({ phone: '333' }, 403);
   actor = admin;

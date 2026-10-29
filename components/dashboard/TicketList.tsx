@@ -3,6 +3,7 @@ import { assignedSummary } from '@/lib/assigned-names'
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { TicketStatus, TicketPriority } from '@prisma/client'
@@ -67,6 +68,8 @@ const priorityLabels = {
 
 export default function TicketList({ tickets, currentUserId }: TicketListProps) {
   const router = useRouter()
+  const { data: session } = useSession()
+  const isAdmin = session?.user?.role === 'ADMIN'
 
   const handleAssign = async (ticketId: string) => {
     try {
@@ -162,7 +165,7 @@ export default function TicketList({ tickets, currentUserId }: TicketListProps) 
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {ticket.assignee ? (
                     (() => { const assigned = assignedSummary(ticket); return <span className="inline-flex max-w-[16rem] items-center gap-1.5" title={assigned.all}><span className="truncate">{assigned.text}</span>{assigned.more > 0 && <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700">+{assigned.more}</span>}</span> })()
-                  ) : (
+                  ) : isAdmin ? (
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
@@ -172,6 +175,8 @@ export default function TicketList({ tickets, currentUserId }: TicketListProps) 
                     >
                       Asignármelo
                     </button>
+                  ) : (
+                    <span className="text-gray-400">Sin asignar</span>
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

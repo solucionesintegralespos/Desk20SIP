@@ -31,9 +31,23 @@ export async function POST(request: Request) {
 
     let { name, email, password, phone, location, address } = await request.json()
 
-    if (!name) {
+    if (typeof name !== 'string' || !name.trim()) {
       return NextResponse.json(
         { error: 'El nombre es requerido' },
+        { status: 400 }
+      )
+    }
+    name = name.trim()
+
+    if (typeof email === 'string') {
+      email = email.trim()
+      if (!email) email = undefined
+      else email = email.toLowerCase()
+    }
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json(
+        { error: 'Ingresa un correo válido' },
         { status: 400 }
       )
     }
@@ -55,8 +69,8 @@ export async function POST(request: Request) {
 
     // Check if user exists (only if email is provided)
     if (email) {
-      const existingUser = await prisma.user.findUnique({
-        where: { email }
+      const existingUser = await prisma.user.findFirst({
+        where: { email: { equals: email, mode: 'insensitive' } }
       })
 
       if (existingUser) {
