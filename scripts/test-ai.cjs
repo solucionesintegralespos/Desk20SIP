@@ -72,7 +72,7 @@ async function runTests() {
   let config = await getAIConfig();
   assert.equal(config.provider, 'gemini', 'Debe detectar automáticamente Gemini aunque esté guardada en chatgpt_api_key');
   assert.equal(config.apiKey, 'AIzaSyExistingGeminiKeyInDatabase123456');
-  assert.equal(config.model, 'gemini-1.5-flash');
+  assert.equal(config.model, 'gemini-3.8-flash');
   console.log('✓ Detección retroactiva de Gemini en chatgpt_api_key exitosa');
 
   // Caso 2: Configuración explícita de Gemini

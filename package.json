@@ -19,9 +19,10 @@
     "test:user-active": "node scripts/test-user-active.cjs",
     "test:security": "node scripts/test-security.cjs",
     "uploads:migrate": "node scripts/move-legacy-uploads.cjs",
-    "prisma:migrate": "prisma migrate dev"
+    "list-models": "node scripts/list-gemini-models.cjs"
   },
   "dependencies": {
+    "@google/genai": "^2.32.0",
     "@prisma/client": "^5.22.0",
     "@types/nodemailer": "^7.0.4",
     "autoprefixer": "^10.4.23",
