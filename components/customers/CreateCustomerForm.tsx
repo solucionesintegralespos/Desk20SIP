@@ -41,7 +41,14 @@ export default function CreateCustomerForm() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          location: formData.location.trim(),
+          address: formData.address.trim(),
+        }),
       })
 
       if (response.ok) {

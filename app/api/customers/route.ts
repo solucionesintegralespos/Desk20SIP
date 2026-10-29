@@ -39,6 +39,21 @@ export async function POST(request: Request) {
     }
     name = name.trim()
 
+    const existingCustomerByName = await prisma.user.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        role: 'CUSTOMER'
+      },
+      select: { id: true }
+    })
+
+    if (existingCustomerByName) {
+      return NextResponse.json(
+        { error: 'Ya existe un cliente con este nombre' },
+        { status: 409 }
+      )
+    }
+
     if (typeof email === 'string') {
       email = email.trim()
       if (!email) email = undefined

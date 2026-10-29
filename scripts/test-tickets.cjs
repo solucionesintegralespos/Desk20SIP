@@ -21,6 +21,7 @@ const { PATCH } = require('../app/api/tickets/[id]/route.ts');
 const { GET: listUsers } = require('../app/api/users/route.ts');
 const { GET: options } = require('../app/api/tickets/options/route.ts');
 const { PATCH: editCustomer } = require('../app/api/customers/[id]/route.ts');
+const { POST: createCustomerApi } = require('../app/api/customers/route.ts');
 const { PATCH: editUser } = require('../app/api/users/[id]/route.ts');
 const { personalDashboardWhere } = require('../lib/personal-dashboard.ts');
 const { GET: report } = require('../app/api/reports/route.ts');
@@ -152,6 +153,10 @@ async function patch(id, data, expected = 200) {
   edited = await customerPatch({ name: customer.name, phone: '222' }); assert.equal(edited.phone, '222'); assert.equal(edited.email, updatedEmail);
   await customerPatch({ email: admin.email }, 409);
   await customerPatch({ email: 'invalid' }, 400);
+  const dupNameRes = await createCustomerApi(new Request('http://localhost/api/customers', { method: 'POST', body: JSON.stringify({ name: customer.name }) }));
+  assert.equal(dupNameRes.status, 409);
+  const dupNameBody = await dupNameRes.json();
+  assert.equal(dupNameBody.error, 'Ya existe un cliente con este nombre');
   edited = await customerPatch({ name: customer.name, email: '' }); assert.equal(edited.email, null);
   assert.equal((await db.user.findUniqueOrThrow({ where: { id: customer.id } })).email, null);
   assert.equal((await db.ticket.findUniqueOrThrow({ where: { id: ticket.id } })).customerId, customer.id);

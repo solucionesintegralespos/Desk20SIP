@@ -16,12 +16,14 @@ interface CreateCustomerModalProps {
   isOpen: boolean
   onClose: () => void
   onCustomerCreated: (customer: CreatedCustomer) => void
+  existingNames?: string[]
 }
 
 export default function CreateCustomerModal({
   isOpen,
   onClose,
   onCustomerCreated,
+  existingNames,
 }: CreateCustomerModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -42,6 +44,11 @@ export default function CreateCustomerModal({
     const trimmedName = formData.name.trim()
     if (!trimmedName) {
       setError('El nombre del cliente es obligatorio')
+      return
+    }
+
+    if (existingNames && existingNames.some(n => n && n.trim().toLowerCase() === trimmedName.toLowerCase())) {
+      setError('Ya existe un cliente con este nombre')
       return
     }
 

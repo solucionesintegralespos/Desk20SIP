@@ -550,6 +550,7 @@ export default function CreateTicketForm({ currentUser, initial }: CreateTicketF
         <CreateCustomerModal
           isOpen={showCustomerModal}
           onClose={() => setShowCustomerModal(false)}
+          existingNames={customers.map(c => c.name || '')}
           onCustomerCreated={(newCustomer) => {
             setCustomers(prev => [newCustomer, ...prev])
             setFormData(prev => ({ ...prev, customerId: newCustomer.id }))
