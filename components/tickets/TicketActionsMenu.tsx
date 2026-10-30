@@ -30,7 +30,16 @@ export default function TicketActionsMenu({ ticket, agents, onClose }: TicketAct
   const router = useRouter()
   const { data: session } = useSession()
   const isAdmin = session?.user?.role === 'ADMIN'
-  const [selected, setSelected] = useState(ticket.assignments?.map(a => a.user.id) || (ticket.assignee ? [ticket.assignee.id] : []))
+  const getInitialSelected = () => {
+    if (ticket.assignments && ticket.assignments.length > 0) {
+      return ticket.assignments.map(a => a.user.id)
+    }
+    if (ticket.assignee?.id) {
+      return [ticket.assignee.id]
+    }
+    return []
+  }
+  const [selected, setSelected] = useState<string[]>(getInitialSelected)
   const menuRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
 

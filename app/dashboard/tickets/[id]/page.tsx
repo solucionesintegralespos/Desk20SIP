@@ -114,7 +114,7 @@ export default async function TicketDetailPage({
       <div className="h-full flex-1 flex overflow-hidden">
         {/* Main content area */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <TicketHeader ticket={ticket} />
+          <TicketHeader ticket={ticket} currentUserRole={user.role} currentUserId={user.id} />
           
           <div className="flex-1 overflow-y-auto p-6">
             <MessageList 

@@ -101,7 +101,20 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    const actor = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
+
+    // Obtener actor por ID o por email para máxima compatibilidad con la sesión
+    const userId = session.user?.id
+    const userEmail = session.user?.email?.trim() || ''
+    const actor = await prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(userId ? [{ id: userId }] : []),
+          ...(userEmail ? [{ email: userEmail }] : [])
+        ]
+      },
+      select: { id: true, role: true, name: true, email: true }
+    })
+
     const current = await prisma.ticket.findUnique({ where: { id: params.id }, include: { assignments: true } })
     if (!current) return NextResponse.json({ error: 'Ticket no encontrado' }, { status: 404 })
     if (!actor || actor.role === 'CUSTOMER') return NextResponse.json({ error: 'Solo los usuarios internos pueden modificar tickets' }, { status: 403 })
@@ -152,16 +165,19 @@ export async function PATCH(request: Request, { params }: { params: { id: string
           })
           const userMap = new Map(newUsers.map(u => [u.id, u.name || u.email || 'Técnico']))
           const afterNames = selected.map(id => userMap.get(id) || 'Técnico').join(', ') || 'Sin asignar'
-          assignmentLogMessage = `Usuarios asignados cambiados. Antes: ${beforeNames} | Después: ${afterNames}`
+          const actorDisplayName = actor.name || actor.email || 'Administrador'
+          assignmentLogMessage = `Técnicos asignados cambiados por ${actorDisplayName}. Antes: ${beforeNames} | Después: ${afterNames}`
         }
       }
-      if (selected) await tx.ticketAssignee.deleteMany({ where: { ticketId: params.id, userId: { notIn: selected } } })
+      if (selected) {
+        await tx.ticketAssignee.deleteMany({ where: { ticketId: params.id } })
+      }
       const updated = await tx.ticket.update({ where: { id: params.id }, data: { ...data,
-        ...(body.status && body.status !== previous.status ? { closedById: body.status === 'CLOSED' ? session.user.id : null, closedAt: body.status === 'CLOSED' ? new Date() : null } : {}),
-        ...(selected ? { assigneeId: selected[0], assignments: { createMany: { data: selected.map(userId => ({ userId })), skipDuplicates: true } } } : {}) },
+        ...(body.status && body.status !== previous.status ? { closedById: body.status === 'CLOSED' ? actor.id : null, closedAt: body.status === 'CLOSED' ? new Date() : null } : {}),
+        ...(selected ? { assigneeId: selected[0] || null, assignments: { createMany: { data: selected.map(userId => ({ userId })) } } } : {}) },
         include: { customer: { select: { id: true, name: true, email: true, avatar: true } }, assignee: { select: { id: true, name: true, email: true } }, assignments: assignmentInclude } })
-      if (body.status && previous.status !== body.status) await tx.message.create({ data: { ticketId: params.id, authorId: session.user.id, content: 'Estado cambiado de ' + previous.status + ' a ' + body.status, type: 'SYSTEM', isInternal: false, attachments: [] } })
-      if (assignmentLogMessage) await tx.message.create({ data: { ticketId: params.id, authorId: session.user.id, content: assignmentLogMessage, type: 'SYSTEM', isInternal: false, attachments: [] } })
+      if (body.status && previous.status !== body.status) await tx.message.create({ data: { ticketId: params.id, authorId: actor.id, content: 'Estado cambiado de ' + previous.status + ' a ' + body.status, type: 'SYSTEM', isInternal: false, attachments: [] } })
+      if (assignmentLogMessage) await tx.message.create({ data: { ticketId: params.id, authorId: actor.id, content: assignmentLogMessage, type: 'SYSTEM', isInternal: false, attachments: [] } })
       return updated
     })
     return NextResponse.json(ticket)

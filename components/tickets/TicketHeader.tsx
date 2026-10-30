@@ -24,6 +24,8 @@ interface TicketHeaderProps {
       email: string | null
     } | null
   }
+  currentUserRole?: string
+  currentUserId?: string
 }
 
 const statusLabels = {
@@ -40,12 +42,31 @@ const priorityLabels = {
   URGENT: 'Urgente',
 }
 
-export default function TicketHeader({ ticket }: TicketHeaderProps) {
+export default function TicketHeader({ ticket, currentUserRole }: TicketHeaderProps) {
   const router = useRouter()
   const ticketsListHref = useTicketsListHref()
   const { data: session } = useSession()
-  const [selected, setSelected] = useState<string[]>(ticket.assignments?.map(a => a.user.id) || (ticket.assignee ? [ticket.assignee.id] : []))
-  useEffect(() => { setSelected(ticket.assignments?.map(a => a.user.id) || (ticket.assignee ? [ticket.assignee.id] : [])) }, [ticket])
+
+  // Determinar si es ADMIN de forma inmediata vía props del servidor o fallback a sesión cliente
+  const effectiveRole = currentUserRole || session?.user?.role || ''
+  const isAdmin = effectiveRole === 'ADMIN'
+  const isCustomer = effectiveRole === 'CUSTOMER'
+
+  const getInitialSelected = () => {
+    if (ticket.assignments && ticket.assignments.length > 0) {
+      return ticket.assignments.map(a => a.user.id)
+    }
+    if (ticket.assignee?.id) {
+      return [ticket.assignee.id]
+    }
+    return []
+  }
+
+  const [selected, setSelected] = useState<string[]>(getInitialSelected)
+  useEffect(() => {
+    setSelected(getInitialSelected())
+  }, [ticket])
+
   const [agents, setAgents] = useState<Array<{ id: string; name: string | null; email: string | null }>>([])
   const [updating, setUpdating] = useState(false)
 
@@ -76,15 +97,26 @@ export default function TicketHeader({ ticket }: TicketHeaderProps) {
         body: JSON.stringify({ status: newStatus })
       })
 
-      if (response.ok) { router.refresh() } else { const data = await response.json(); toast.error(data.error || 'No se pudo guardar') }
+      if (response.ok) {
+        toast.success('Estado actualizado correctamente')
+        router.refresh()
+      } else {
+        const data = await response.json()
+        toast.error(data.error || 'No se pudo guardar el estado')
+      }
     } catch (error) {
       console.error('Error updating status:', error)
+      toast.error('Error de red al actualizar estado')
     } finally {
       setUpdating(false)
     }
   }
 
   const handleAssigneeChange = async () => {
+    if (!selected.length) {
+      toast.error('Selecciona al menos un técnico para asignar')
+      return
+    }
     setUpdating(true)
     try {
       const response = await fetch(`/api/tickets/${ticket.id}`, {
@@ -93,9 +125,16 @@ export default function TicketHeader({ ticket }: TicketHeaderProps) {
         body: JSON.stringify({ assigneeIds: selected })
       })
 
-      if (response.ok) { router.refresh() } else { const data = await response.json(); toast.error(data.error || 'No se pudo guardar') }
+      if (response.ok) {
+        toast.success('Técnicos asignados actualizados correctamente')
+        router.refresh()
+      } else {
+        const data = await response.json()
+        toast.error(data.error || 'No se pudo guardar la asignación')
+      }
     } catch (error) {
       console.error('Error updating assignee:', error)
+      toast.error('Error de red al actualizar la asignación')
     } finally {
       setUpdating(false)
     }
@@ -138,22 +177,22 @@ export default function TicketHeader({ ticket }: TicketHeaderProps) {
           </div>
         </div>
         
-        {session?.user.role !== 'CUSTOMER' && (
+        {!isCustomer && (
           <div className="w-full md:w-72">
             <TechnicianPicker
               agents={agents}
               value={selected}
               onChange={setSelected}
-              disabled={updating || session?.user?.role !== 'ADMIN'}
+              disabled={updating || !isAdmin}
             />
-            {session?.user?.role === 'ADMIN' ? (
+            {isAdmin ? (
               <button
                 type="button"
                 disabled={updating || !selected.length}
                 onClick={handleAssigneeChange}
-                className="mt-2 px-3 py-2 rounded bg-primary-600 text-white text-sm disabled:opacity-50"
+                className="mt-2 px-3 py-2 rounded bg-primary-600 text-white text-sm disabled:opacity-50 hover:bg-primary-700 transition font-medium"
               >
-                Guardar asignación
+                {updating ? 'Guardando...' : 'Guardar asignación'}
               </button>
             ) : (
               <p className="mt-1 text-xs text-gray-500">
