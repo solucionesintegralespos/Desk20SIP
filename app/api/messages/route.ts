@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendEmail, getTicketReplyEmailTemplate } from '@/lib/email'
 
+export const dynamic = 'force-dynamic'
+
 const STAFF_TYPES = ['COMMENT', 'NOTE', 'EMAIL', 'WHATSAPP'] as const
 
 // Staff work on every ticket; a customer only on their own, and never sees internal notes.

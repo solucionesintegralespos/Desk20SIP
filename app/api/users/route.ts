@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { validateUserPerformance } from '@/lib/user-performance'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)

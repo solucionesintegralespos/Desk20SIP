@@ -7,6 +7,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendEmail, getTicketCreatedEmailTemplate } from '@/lib/email'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -78,7 +80,8 @@ export async function GET(request: Request) {
     })
 
     return NextResponse.json(tickets)
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === 'DYNAMIC_SERVER_USAGE') throw error
     console.error('Error fetching tickets:', error)
     return NextResponse.json(
       { error: 'Error al obtener tickets' },
@@ -115,9 +118,11 @@ export async function POST(request: Request) {
     if (estimatedHours !== null && (!Number.isFinite(estimatedHours) || estimatedHours < 0)) return NextResponse.json({ error: 'Las horas deben ser un número positivo' }, { status: 400 })
     if ((description != null && typeof description !== 'string') || [tags, attachments].some(value => value !== undefined && (!Array.isArray(value) || value.some(item => typeof item !== 'string')))) return NextResponse.json({ error: 'Datos del ticket no válidos' }, { status: 400 })
     const ticket = await prisma.ticket.create({
-      data: { subject: subject.trim(), description, priority, type, categoryId, customerId, hours: estimatedHours, enteredById: session?.user.id || null,
+      data: {
+        subject: subject.trim(), description, priority, type, categoryId, customerId, hours: estimatedHours, enteredById: session?.user.id || null,
         tags: tags || [], attachments: attachments || [], assigneeId: assigneeIds[0],
-        assignments: { createMany: { data: assigneeIds.map(userId => ({ userId })), skipDuplicates: true } } },
+        assignments: { createMany: { data: assigneeIds.map(userId => ({ userId })), skipDuplicates: true } }
+      },
       include: { customer: { select: { id: true, name: true, email: true, avatar: true, emailNotifications: true } }, assignments: assignmentInclude }
     })
     if (ticket.customer.emailNotifications) {

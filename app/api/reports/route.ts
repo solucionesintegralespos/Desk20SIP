@@ -6,6 +6,8 @@ import { authOptions } from '@/lib/auth'
 import { monthlyRange } from '@/lib/monthly-performance'
 import { serviceDay } from '@/lib/support/order-display'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -14,7 +16,7 @@ export async function GET(request: Request) {
     if (actor?.role !== 'ADMIN') return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 })
     const params = new URL(request.url).searchParams
     const month = params.get('month') || serviceDay(new Date().toISOString()).slice(0, 7)
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || Number(month.slice(0,4)) < 2000) return NextResponse.json({ error: 'Mes inválido' }, { status: 400 })
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || Number(month.slice(0, 4)) < 2000) return NextResponse.json({ error: 'Mes inválido' }, { status: 400 })
     const range = monthlyRange(new Date(`${month}-01T12:00:00-05:00`))
     const technician = params.get('technician') || ''
     const category = params.get('category') || ''
@@ -46,8 +48,10 @@ export async function GET(request: Request) {
     const years = Array.from(new Set([...monthlyRows.map(r => r.year), currentYear])).sort((a, b) => a - b)
     const currentMonth = Number(serviceDay(new Date().toISOString()).slice(5, 7))
     // Months that have not happened yet are null so the current year's line stops at today.
-    const monthly = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, ...Object.fromEntries(years.map(year => [year,
-      year === currentYear && i + 1 > currentMonth ? null : monthlyRows.find(r => r.year === year && r.month === i + 1)?.count || 0])) }))
+    const monthly = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1, ...Object.fromEntries(years.map(year => [year,
+        year === currentYear && i + 1 > currentMonth ? null : monthlyRows.find(r => r.year === year && r.month === i + 1)?.count || 0]))
+    }))
     const activity = Array.from({ length: Math.round((range.lt.getTime() - range.gte.getTime()) / 86400000) }, (_, i) => ({ day: String(i + 1), entered: 0, closed: 0 }))
     const entryCounts = new Map<string, number>(), closureCounts = new Map<string, number>(), categoryCounts = new Map<string, number>()
     for (const t of entries) {
@@ -72,15 +76,17 @@ export async function GET(request: Request) {
       const client = clientNames.find(c => c.id === id)
       return { id, name: client?.name || client?.email || 'Cliente', email: client?.name ? client.email : null, ...counts }
     }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'es'))
-    return NextResponse.json({ month, label: range.label, byClient, technician, category, technicians, categories,
+    return NextResponse.json({
+      month, label: range.label, byClient, technician, category, technicians, categories,
       summary: { entered: entries.length, closed: closures.length, open, pending },
       unattributed: entries.filter(t => !t.enteredById).length,
       rows: technicians.filter(t => !technician || t.id === technician).map(t => ({ id: t.id, name: t.name || t.email || 'Usuario', avatar: t.avatar, entered: entryCounts.get(t.id) || 0, closed: closureCounts.get(t.id) || 0, entryGoal: t.dailyEntryGoal, closureGoal: t.dailyClosureGoal })),
       activity,
       monthly: { years, rows: monthly },
-      byCategory: Array.from(categoryCounts, ([id, count]) => ({ name: categories.find(c => c.id === id)?.name || 'Sin categoría', count })).sort((a,b) => b.count - a.count),
+      byCategory: Array.from(categoryCounts, ([id, count]) => ({ name: categories.find(c => c.id === id)?.name || 'Sin categoría', count })).sort((a, b) => b.count - a.count),
     })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === 'DYNAMIC_SERVER_USAGE') throw error
     console.error('Error fetching reports:', error)
     return NextResponse.json({ error: 'No se pudo cargar el reporte' }, { status: 500 })
   }

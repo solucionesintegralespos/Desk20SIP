@@ -5,6 +5,8 @@ import Sidebar from '@/components/dashboard/Sidebar'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import { TaskReminders } from '@/components/reminders/TaskReminders'
 
+export const dynamic = 'force-dynamic'
+
 export default async function DashboardLayout({
   children,
 }: {
