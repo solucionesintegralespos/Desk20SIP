@@ -28,8 +28,8 @@ export default async function ReportsPage() {
     <>
       
       
-      <div className="h-full flex-1 overflow-y-auto">
-        <div className="p-4 md:p-8">
+      <div className="h-full overflow-y-auto">
+        <div className="p-4 md:p-8 pb-16">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900">Reportes</h1>
             <p className="text-gray-600 mt-1">Rendimiento mensual del equipo</p>

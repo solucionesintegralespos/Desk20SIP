@@ -177,7 +177,23 @@ export function Orders() {
           <Signature key={draft.id} value={draft.signature} disabled={readOnly} error={fieldErrors.signature} onChange={signature => set({ signature })} />
           {draft.status === 'completed' ? <>
             <p className="subtle">Firmada por {draft.signerName} · {serviceDate(draft.signedAt)}</p>
-            <Button type="button" onClick={() => window.print()}><Download /> Imprimir / Guardar PDF</Button>
+            <Button type="button" onClick={async () => {
+              try {
+                const res = await fetch(`/api/orders/${draft.id}/pdf`)
+                if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Error ${res.status}`) }
+                const blob = await res.blob()
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                const num = (draft as WorkOrder & { number?: string | number }).number
+                a.href = url
+                a.download = `orden-${String(num || draft.id).replace(/[^a-zA-Z0-9-]/g, '')}.pdf`
+                a.click()
+                setTimeout(() => URL.revokeObjectURL(url), 1000)
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : 'No se pudo descargar el PDF'
+                toast.error(msg)
+              }
+            }}><Download /> Descargar PDF</Button>
           </> : !readOnly && <div className="flex gap-3">
             <Button type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar y confirmar'}</Button>
             {!attempted && <p className="self-center text-xs text-slate-500"><span className="text-red-600">*</span> Campos obligatorios</p>}

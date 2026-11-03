@@ -21,9 +21,9 @@ export default async function DashboardLayout({
     where: { status: 'OPEN', ...(user.role === 'CUSTOMER' ? {customerId:user.id} : {}) },
   })
   // The theme is a device preference read from localStorage by ThemeProvider.
-  const workspace = <div className="flex h-screen bg-gray-50 flex-col md:flex-row">
+  const workspace = <div className="flex h-screen bg-gray-50 flex-col md:flex-row overflow-hidden">
     <Sidebar user={{name:user.name,email:user.email,role:user.role}} openTicketsCount={openTicketsCount} />
-    <main className="flex-1 min-w-0 min-h-0 overflow-hidden">{children}</main>
+    <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col h-full">{children}</main>
   </div>
   // Scheduled tasks belong to support staff only.
   return <ThemeProvider>{user.role === 'CUSTOMER' ? workspace : <TaskReminders userId={user.id}>{workspace}</TaskReminders>}</ThemeProvider>

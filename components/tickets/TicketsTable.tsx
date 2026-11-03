@@ -1,12 +1,10 @@
 'use client'
 import { assignedSummary } from '@/lib/assigned-names'
 
-import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { TicketStatus, TicketPriority, TicketType } from '@prisma/client'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface Ticket {
   id: string
@@ -84,15 +82,9 @@ const typeLabels = {
 
 export default function TicketsTable({ tickets, agents, currentUserId }: TicketsTableProps) {
   const router = useRouter()
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 10
-
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [tickets])
-
-  const totalPages = Math.ceil(tickets.length / itemsPerPage)
-  const currentTickets = tickets.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+  // La paginación es server-side (componente Pagination en page.tsx).
+  // Este componente sólo muestra los tickets que recibe sin volver a paginarlos.
+  const currentTickets = tickets
 
   if (tickets.length === 0) {
     return (
@@ -209,67 +201,6 @@ export default function TicketsTable({ tickets, agents, currentUserId }: Tickets
             ))}
           </tbody>
         </table>
-      </div>
-      
-      {/* Paginación y Contador */}
-      <div className="bg-white px-4 py-3 border-t border-gray-200 flex items-center justify-between sm:px-6">
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-gray-700">
-              Mostrando del <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> al{' '}
-              <span className="font-medium">
-                {Math.min(currentPage * itemsPerPage, tickets.length)}
-              </span>{' '}
-              de <span className="font-medium">{tickets.length}</span> tickets
-            </p>
-          </div>
-          <div>
-            <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span className="sr-only">Anterior</span>
-                <ChevronLeft className="h-5 w-5" aria-hidden="true" />
-              </button>
-              
-              <div className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                Página {currentPage} de {totalPages}
-              </div>
-              
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span className="sr-only">Siguiente</span>
-                <ChevronRight className="h-5 w-5" aria-hidden="true" />
-              </button>
-            </nav>
-          </div>
-        </div>
-        
-        {/* Vista móvil */}
-        <div className="flex items-center justify-between w-full sm:hidden">
-          <button
-            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-            className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-          >
-            Anterior
-          </button>
-          <span className="text-sm text-gray-700">
-            {currentPage} / {totalPages}
-          </span>
-          <button
-            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
-            className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-          >
-            Siguiente
-          </button>
-        </div>
       </div>
     </div>
   )
