@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { text, subject } = await request.json()
+    const { text, subject, field } = await request.json()
 
     if (!text || !text.trim()) {
       return NextResponse.json(
@@ -23,12 +23,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const systemPrompt = field
+      ? `Eres un asistente experto en redacción de órdenes de servicio y soporte técnico de sistemas POS y tecnología. Tu tarea es mejorar la redacción del campo "${field}" haciéndola clara, profesional, técnica y bien estructurada, manteniendo todos los datos y detalles proporcionados. Responde ÚNICAMENTE con el texto mejorado, sin introducciones, saludos ni comentarios adicionales.`
+      : 'Eres un asistente experto en redactar tickets de soporte técnico. Tu tarea es mejorar la descripción del ticket haciéndola más clara, profesional y detallada, manteniendo toda la información relevante. Usa un tono profesional pero amigable. Responde SOLO con el texto mejorado, sin agregar comentarios adicionales ni introducciones.'
+
+    const userPrompt = field
+      ? `Servicio / Tarea: ${subject || 'Orden de servicio'}\nCampo: ${field}\nTexto actual:\n${text}\n\nMejora la redacción haciéndola más clara, profesional y precisa:`
+      : `Asunto del ticket: ${subject || 'Sin asunto'}\n\nDescripción actual:\n${text}\n\nMejora esta descripción haciendo que sea más clara, estructurada y profesional. Mantén toda la información importante.`
+
     const result = await generateAIResponse({
-      systemPrompt:
-        'Eres un asistente experto en redactar tickets de soporte técnico. Tu tarea es mejorar la descripción del ticket haciéndola más clara, profesional y detallada, manteniendo toda la información relevante. Usa un tono profesional pero amigable. Responde SOLO con el texto mejorado, sin agregar comentarios adicionales ni introducciones.',
-      userPrompt: `Asunto del ticket: ${subject || 'Sin asunto'}\n\nDescripción actual:\n${text}\n\nMejora esta descripción haciendo que sea más clara, estructurada y profesional. Mantén toda la información importante.`,
+      systemPrompt,
+      userPrompt,
       temperature: 0.7,
-      maxTokens: 500
+      maxTokens: 600
     })
 
     const improvedText = result.text || text

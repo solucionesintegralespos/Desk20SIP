@@ -1,7 +1,7 @@
 'use client';
 import { can } from '@/lib/support/permissions';
 import { useEffect, useState } from 'react';
-import { Plus, FileSignature, Download, UserRound, CalendarClock, Ticket, Rows3, ContactRound } from 'lucide-react';
+import { Plus, FileSignature, Download, UserRound, CalendarClock, Ticket, Rows3, ContactRound, Sparkles, Loader2 } from 'lucide-react';
 import { Button, Input, Textarea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui';
 import { toast } from 'react-hot-toast';
 import { Field, Pick, Check } from './fields';
@@ -33,6 +33,7 @@ export function Orders() {
   const { state, user, save, detail, dateFrom: date, setDates, loading } = useSupport();
   const [draft, setDraft] = useState<WorkOrder | null>(null);
   const [busy, setBusy] = useState(false);
+  const [improvingField, setImprovingField] = useState<'diagnosis' | 'workDone' | 'observations' | null>(null);
   // Field errors are shown after the first attempt to confirm, then update as the user types.
   const [attempted, setAttempted] = useState(false);
   const [view, setView] = useState<'horizontal' | 'passport'>('horizontal');
@@ -67,6 +68,59 @@ export function Orders() {
   }
   const readOnly = !!draft && (draft.status === 'completed' || (draft.createdById || draft.techId) !== user.id || !can(user, 'orders', state.orders.some(r => r.id === draft.id) ? 'update' : 'create'));
   const set = (patch: Partial<WorkOrder>) => setDraft(d => d && ({ ...d, ...patch }));
+
+  const improveWithAI = async (fieldKey: 'diagnosis' | 'workDone' | 'observations', fieldName: string) => {
+    if (!draft) return;
+    const currentText = (draft[fieldKey] || '').trim();
+    if (!currentText) {
+      toast.error(`Escribe algo en "${fieldName}" antes de mejorar con IA`);
+      return;
+    }
+    setImprovingField(fieldKey);
+    try {
+      const res = await fetch('/api/ai/improve-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: currentText,
+          subject: draft.serviceName || 'Orden de servicio',
+          field: fieldName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al mejorar el texto');
+      }
+      set({ [fieldKey]: data.improvedText });
+      toast.success(`${fieldName} mejorado con IA`);
+    } catch (err: any) {
+      toast.error(err.message || 'Error al conectar con IA');
+    } finally {
+      setImprovingField(null);
+    }
+  };
+
+  const improveBtn = (fieldKey: 'diagnosis' | 'workDone' | 'observations', fieldName: string) => (
+    <button
+      type="button"
+      disabled={readOnly || improvingField !== null}
+      onClick={() => void improveWithAI(fieldKey, fieldName)}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-blue-600 rounded-md hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+      title={`Mejorar ${fieldName.toLowerCase()} con IA`}
+    >
+      {improvingField === fieldKey ? (
+        <>
+          <Loader2 size={12} className="animate-spin" />
+          <span>Mejorando…</span>
+        </>
+      ) : (
+        <>
+          <Sparkles size={12} />
+          <span>Mejorar con IA</span>
+        </>
+      )}
+    </button>
+  );
   const fieldErrors = draft && attempted && !readOnly ? orderFieldErrors(draft) : {};
   function openDraft(order: WorkOrder | null) { setAttempted(false); setDraft(order); }
 
@@ -168,9 +222,9 @@ export function Orders() {
               <Field label="Ticket relacionado (opcional)"><Pick label="Ticket relacionado" value={draft.ticketId || 'none'} onChange={value => set({ ticketId: value === 'none' ? undefined : value })} options={[{ value: 'none', label: 'Sin vínculo' }, ...state.tickets.filter(t => t.clientId === draft.clientId && (t.status !== 'closed' || t.id === draft.ticketId)).map(t => ({ value: t.id, label: t.subject ? `${t.number} · ${t.subject}` : t.number }))]} /></Field>
               <Field label="Checklist relacionado (opcional)"><Pick label="Checklist relacionado" value={draft.checklistId || 'none'} onChange={value => set({ checklistId: value === 'none' ? undefined : value })} options={[{ value: 'none', label: 'Sin vínculo' }, ...state.checklists.filter(c => c.clientId === draft.clientId).map(c => ({ value: c.id, label: c.number }))]} /></Field>
             </div>
-            <Field label="Diagnóstico"><Textarea value={draft.diagnosis} onChange={event => set({ diagnosis: event.target.value })} /></Field>
-            <Field label="Trabajo realizado" required error={fieldErrors.workDone}><Textarea aria-invalid={!!fieldErrors.workDone || undefined} value={draft.workDone} onChange={event => set({ workDone: event.target.value })} /></Field>
-            <Field label="Observaciones y recomendaciones"><Textarea value={draft.observations} onChange={event => set({ observations: event.target.value })} /></Field>
+            <Field label="Diagnóstico" action={improveBtn('diagnosis', 'Diagnóstico')}><Textarea value={draft.diagnosis} onChange={event => set({ diagnosis: event.target.value })} /></Field>
+            <Field label="Trabajo realizado" required error={fieldErrors.workDone} action={improveBtn('workDone', 'Trabajo realizado')}><Textarea aria-invalid={!!fieldErrors.workDone || undefined} value={draft.workDone} onChange={event => set({ workDone: event.target.value })} /></Field>
+            <Field label="Observaciones y recomendaciones" action={improveBtn('observations', 'Observaciones y recomendaciones')}><Textarea value={draft.observations} onChange={event => set({ observations: event.target.value })} /></Field>
             <Field label="Nombre de quien recibe el servicio" required error={fieldErrors.signerName}><Input aria-invalid={!!fieldErrors.signerName || undefined} value={draft.signerName} onChange={event => set({ signerName: event.target.value })} /></Field>
             <Check label="He revisado el trabajo y las observaciones de esta orden, y confirmo su recepción. *" checked={draft.consent} disabled={readOnly} error={fieldErrors.consent} onChange={consent => set({ consent })} />
           </fieldset>

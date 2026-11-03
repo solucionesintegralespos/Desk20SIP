@@ -130,6 +130,17 @@
   body {
     @apply bg-gray-50 text-gray-900;
   }
+  html, body {
+    height: 100%;
+  }
+  body:has(.brand-sidebar) {
+    overflow: hidden;
+    height: 100vh;
+    max-height: 100vh;
+  }
+  body:has([data-theme="dark"]) {
+    background-color: #0f172a;
+  }
   input[type='checkbox'], progress { accent-color: var(--sip-blue); }
   ::selection { background:#dbe6fa; color:var(--sip-navy); }
 }

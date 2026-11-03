@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
-export function Field({ label, children, required, error }: {
+export function Field({ label, children, required, error, action }: {
     label: string;
     children: ReactNode;
     required?: boolean;
     /** Shown under the control once the form was submitted with this field missing. */
     error?: string;
-}) { return <label className="field"><span>{label}{required && <span className="text-red-600" aria-hidden="true"> *</span>}</span>{children}{error && <span className="field-error" role="alert">{error}</span>}</label>; }
+    action?: ReactNode;
+}) { return <div className="field"><div className="flex items-center justify-between gap-2 mb-1"><span className="text-sm font-medium">{label}{required && <span className="text-red-600" aria-hidden="true"> *</span>}</span>{action}</div>{children}{error && <span className="field-error" role="alert">{error}</span>}</div>; }
 export function Pick({ label, value, onChange, options }: {
     label: string;
     value: string;
