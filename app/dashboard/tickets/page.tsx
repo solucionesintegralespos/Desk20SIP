@@ -8,6 +8,7 @@ import TicketFilters from '@/components/tickets/TicketFilters'
 import Pagination from '@/components/tickets/Pagination'
 import { dailyRange } from '@/lib/daily-filter'
 import { personalDashboardWhere } from '@/lib/personal-dashboard'
+import { parseTicketSort, ticketOrderBy } from '@/lib/tickets-sort'
 
 interface SearchParams {
   status?: string
@@ -22,6 +23,9 @@ interface SearchParams {
   range?: string
   page?: string
   mine?: string
+  number?: string
+  sort?: string
+  dir?: string
 }
 
 export default async function TicketsPage({
@@ -47,6 +51,13 @@ export default async function TicketsPage({
   const skip = (page - 1) * perPage
 
   const whereClause: any = searchParams.mine === '1' ? personalDashboardWhere(user) : {}
+  const sort = parseTicketSort(searchParams.sort, searchParams.dir)
+
+  // Exact ticket number ("123" or "#123"). A specific ticket is being looked up,
+  // so the creation-date range does not apply.
+  const numberText = (searchParams.number || '').trim().replace(/^#/, '')
+  const ticketNumber = /^[0-9]{1,9}$/.test(numberText) ? parseInt(numberText, 10) : undefined
+  if (ticketNumber !== undefined) whereClause.number = ticketNumber
   
   // Si es CUSTOMER, solo puede ver sus propios tickets
   if (user.role === 'CUSTOMER') {
@@ -89,7 +100,7 @@ export default async function TicketsPage({
   // range=all removes the date filter. `date` is the former single-day parameter.
   const allDates = searchParams.range === 'all'
   const range = dailyRange(searchParams.from || searchParams.date, searchParams.to || searchParams.date)
-  if (!allDates) whereClause.createdAt = { gte: range.gte, lt: range.lt }
+  if (!allDates && ticketNumber === undefined) whereClause.createdAt = { gte: range.gte, lt: range.lt }
   const dateFiltered = allDates || !!(searchParams.from || searchParams.to || searchParams.date)
 
   const [tickets, totalCount, agents, categories, customers] = await Promise.all([
@@ -124,9 +135,7 @@ export default async function TicketsPage({
           }
         }
       },
-      orderBy: {
-        updatedAt: 'desc'
-      },
+      orderBy: ticketOrderBy(sort),
       skip,
       take: perPage,
     }),
@@ -173,6 +182,7 @@ export default async function TicketsPage({
             currentPriority={searchParams.priority}
             currentAssignee={searchParams.assignee}
             currentSearch={searchParams.search}
+            currentNumber={ticketNumber !== undefined ? String(ticketNumber) : undefined}
             currentCategory={searchParams.category}
             currentCustomer={user.role === 'CUSTOMER' ? undefined : searchParams.customer}
             customers={customers}
@@ -187,6 +197,7 @@ export default async function TicketsPage({
             tickets={tickets}
             agents={agents}
             currentUserId={session.user.id}
+            sort={sort}
           />
 
           <Pagination 

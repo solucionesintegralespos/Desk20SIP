@@ -3,7 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { rememberTicketsQuery } from '@/lib/tickets-list-query'
-import { Filter, Search } from 'lucide-react'
+import { Filter, Hash, Search } from 'lucide-react'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 
 interface TicketFiltersProps {
@@ -11,6 +11,8 @@ interface TicketFiltersProps {
   currentPriority?: string
   currentAssignee?: string
   currentSearch?: string
+  /** Exact ticket number already applied, if any. */
+  currentNumber?: string
   currentCategory?: string
   currentCustomer?: string
   currentFrom?: string
@@ -31,6 +33,7 @@ export default function TicketFilters({
   currentPriority,
   currentAssignee,
   currentSearch,
+  currentNumber,
   currentCategory,
   currentCustomer,
   currentFrom,
@@ -41,6 +44,7 @@ export default function TicketFilters({
   agents,
 }: TicketFiltersProps) {
   const [searchTerm, setSearchTerm] = useState(currentSearch || '')
+  const [numberTerm, setNumberTerm] = useState(currentNumber || '')
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -50,12 +54,15 @@ export default function TicketFilters({
   // keep the search box in step with back/forward navigation.
   useEffect(() => { rememberTicketsQuery(query) }, [query])
   useEffect(() => { setSearchTerm(currentSearch || '') }, [currentSearch])
+  useEffect(() => { setNumberTerm(currentNumber || '') }, [currentNumber])
 
   // Every change starts from the current URL and returns to the first page.
   const navigate = (change: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString())
     params.delete('page')
     if (searchTerm) params.set('search', searchTerm); else params.delete('search')
+    const number = numberTerm.trim().replace(/^#/, '')
+    if (number) params.set('number', number); else params.delete('number')
     change(params)
     const next = params.toString()
     router.push(`${pathname}${next ? `?${next}` : ''}`)
@@ -75,31 +82,56 @@ export default function TicketFilters({
   })
   const allDates = searchParams.get('range') === 'all'
 
+  // The text and number boxes are applied together by `navigate`.
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    updateFilter('search', searchTerm)
+    navigate(() => {})
   }
 
+  // Sorting is not a filter: it survives clearing.
   const clearFilters = () => {
     setSearchTerm('')
-    router.push(searchParams.get('mine') === '1' ? `${pathname}?mine=1` : pathname)
+    setNumberTerm('')
+    const params = new URLSearchParams()
+    if (searchParams.get('mine') === '1') params.set('mine', '1')
+    for (const key of ['sort', 'dir']) { const value = searchParams.get(key); if (value) params.set(key, value) }
+    const next = params.toString()
+    router.push(`${pathname}${next ? `?${next}` : ''}`)
   }
 
-  const hasFilters = currentStatus || currentPriority || currentAssignee || currentSearch || currentCategory || currentCustomer || dateFiltered
+  const hasFilters = currentStatus || currentPriority || currentAssignee || currentSearch || currentNumber || currentCategory || currentCustomer || dateFiltered
 
   return (
     <div className="bg-white rounded-lg shadow p-4 mb-6">
-      <form onSubmit={handleSearch} className="mb-4">
-        <div className="relative">
+      <form onSubmit={handleSearch} className="mb-4 flex flex-col gap-3 md:flex-row">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
           <input
             type="text"
+            aria-label="Buscar por título"
             placeholder="Buscar por título del ticket..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
+        <div className="relative md:w-48">
+          <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="#?[0-9]*"
+            aria-label="Número de ticket"
+            title="Número exacto del ticket, por ejemplo 123 o #123"
+            placeholder="N.º de ticket"
+            value={numberTerm}
+            onChange={(e) => setNumberTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+        </div>
+        <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1">
+          Buscar
+        </button>
       </form>
       <div className="flex flex-col md:flex-row md:flex-wrap md:items-center gap-4">
         <div className="hidden md:flex items-center space-x-2 text-gray-700">

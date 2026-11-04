@@ -1,7 +1,9 @@
 'use client'
 import { assignedSummary } from '@/lib/assigned-names'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
+import { defaultTicketSort, type TicketSortDir, type TicketSortKey } from '@/lib/tickets-sort'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { TicketStatus, TicketPriority, TicketType } from '@prisma/client'
@@ -44,7 +46,20 @@ interface TicketsTableProps {
     email: string | null
   }>
   currentUserId: string
+  /** Current order of the list, taken from the URL by the page. */
+  sort?: { key: TicketSortKey; dir: TicketSortDir }
 }
+
+const columns: Array<{ key: TicketSortKey; label: string }> = [
+  { key: 'number', label: 'Ticket' },
+  { key: 'customer', label: 'Cliente' },
+  { key: 'type', label: 'Tipo' },
+  { key: 'category', label: 'Categoría' },
+  { key: 'status', label: 'Estado' },
+  { key: 'priority', label: 'Prioridad' },
+  { key: 'assignee', label: 'Asignado' },
+  { key: 'updated', label: 'Actualizado' },
+]
 
 const statusColors = {
   OPEN: 'bg-red-100 text-red-800',
@@ -80,8 +95,22 @@ const typeLabels = {
   PROJECT: 'Proyecto',
 }
 
-export default function TicketsTable({ tickets, agents, currentUserId }: TicketsTableProps) {
+export default function TicketsTable({ tickets, agents, currentUserId, sort = defaultTicketSort }: TicketsTableProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // Clicking a header sorts by it; clicking the active header flips the direction.
+  // Dates start newest first, everything else ascending. Sorting returns to page 1.
+  const sortBy = (key: TicketSortKey) => {
+    const dir: TicketSortDir = sort.key === key ? (sort.dir === 'asc' ? 'desc' : 'asc') : key === 'updated' ? 'desc' : 'asc'
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('page')
+    if (key === defaultTicketSort.key && dir === defaultTicketSort.dir) { params.delete('sort'); params.delete('dir') }
+    else { params.set('sort', key); params.set('dir', dir) }
+    const next = params.toString()
+    router.push(`${pathname}${next ? `?${next}` : ''}`)
+  }
   // La paginación es server-side (componente Pagination en page.tsx).
   // Este componente sólo muestra los tickets que recibe sin volver a paginarlos.
   const currentTickets = tickets
@@ -101,30 +130,28 @@ export default function TicketsTable({ tickets, agents, currentUserId }: Tickets
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Ticket
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Cliente
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Tipo
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Categoría
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Estado
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Prioridad
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Asignado
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actualizado
-              </th>
+              {columns.map(column => {
+                const active = sort.key === column.key
+                const Icon = !active ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown
+                return (
+                  <th
+                    key={column.key}
+                    scope="col"
+                    aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => sortBy(column.key)}
+                      title={active ? (sort.dir === 'asc' ? 'Orden ascendente. Clic para descendente' : 'Orden descendente. Clic para ascendente') : `Ordenar por ${column.label.toLowerCase()}`}
+                      className={`group inline-flex items-center gap-1 rounded uppercase tracking-wider hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${active ? 'text-gray-900' : ''}`}
+                    >
+                      {column.label}
+                      <Icon className={`h-3.5 w-3.5 ${active ? 'text-primary-600' : 'text-gray-300 group-hover:text-gray-500'}`} aria-hidden="true" />
+                    </button>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">

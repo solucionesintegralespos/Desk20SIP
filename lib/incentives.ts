@@ -78,7 +78,7 @@ export function calculatePlan(plan: IncentivePlan, tickets: IncentiveTicket[], n
     const result = incentiveResult({ ...indicator, numerator, denominator })
     return { id: indicator.id, numerator, denominator, percentage: result.percentage,
       status: indicator.confirmed ? result.status : 'pending' as const, payout: indicator.confirmed ? result.payout : 0,
-      ticketNumbers: matching.map(t => t.number), denominatorTicketNumbers: ['urgent', 'projects', 'first_contact', 'same_day_urgent'].includes(indicator.source) ? selected.map(t => t.number) : [],
+      ticketNumbers: matching.map(t => t.number), ticketIds: matching.map(t => t.id), denominatorTicketNumbers: ['urgent', 'projects', 'first_contact', 'same_day_urgent'].includes(indicator.source) ? selected.map(t => t.number) : [],
     }
   })
   return { rows, total: rows.reduce((sum, r) => sum + r.payout, 0), calculatedAt: now.toISOString() }
