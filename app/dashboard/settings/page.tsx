@@ -9,6 +9,8 @@ import GeneralSettings from '@/components/settings/GeneralSettings'
 import { SupportProvider } from '@/lib/support/context'
 import { Templates } from '@/components/support/templates'
 import { Settings as SettingsIcon, Mail, Globe, Shield } from 'lucide-react'
+import { COMPANY_SETTING_KEYS } from '@/lib/accounting/company-defaults'
+import { isAdmin } from '@/lib/roles'
 
 export const metadata = {
   title: 'Configuración | SIP SOPORTE',
@@ -54,7 +56,7 @@ export default async function SettingsPage() {
   }
 
   // Validar que solo ADMIN pueda acceder
-  if (user.role !== 'ADMIN') {
+  if (!isAdmin(user.role)) {
     redirect('/dashboard')
   }
 
@@ -86,7 +88,7 @@ export default async function SettingsPage() {
   const orgSettings = await prisma.setting.findMany({
     where: {
       key: {
-        in: ['org_name', 'org_email', 'org_logo', 'DISABLE_LANDING_PAGE', 'ENABLE_CUSTOMER_USERS']
+        in: ['org_name', 'org_email', 'org_logo', 'DISABLE_LANDING_PAGE', 'ENABLE_CUSTOMER_USERS', ...COMPANY_SETTING_KEYS]
       }
     }
   })
@@ -184,6 +186,7 @@ export default async function SettingsPage() {
               initialOrgLogo={orgInfo.org_logo}
               initialDisableLanding={orgInfo.DISABLE_LANDING_PAGE}
               initialEnableCustomerUsers={orgInfo.ENABLE_CUSTOMER_USERS}
+              initialCompany={orgInfo}
             />
 
             {/* Configuración de Sistema */}

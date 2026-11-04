@@ -18,6 +18,8 @@
     "test:schedule-repeat": "node scripts/test-schedule-repeat.cjs",
     "test:user-active": "node scripts/test-user-active.cjs",
     "test:security": "node scripts/test-security.cjs",
+    "test:accounting": "node scripts/test-accounting-calc.cjs && node scripts/test-accounting-api.cjs",
+    "test:billing-numbering": "node scripts/test-billing-numbering.cjs",
     "uploads:migrate": "node scripts/move-legacy-uploads.cjs",
     "list-models": "node scripts/list-gemini-models.cjs"
   },

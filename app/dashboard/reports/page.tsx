@@ -2,6 +2,7 @@ import { getDashboardSession, getDashboardUser } from "@/lib/dashboard-data"
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import ReportsDashboard from '@/components/reports/ReportsDashboard'
+import { isAdmin } from '@/lib/roles'
 
 export const metadata = {
   title: 'Reportes | SIP SOPORTE',
@@ -18,7 +19,7 @@ export default async function ReportsPage() {
   // Obtener usuario
   const user = await getDashboardUser()
 
-  if (!user || user.role !== 'ADMIN') {
+  if (!user || !isAdmin(user.role)) {
     redirect('/dashboard')
   }
 

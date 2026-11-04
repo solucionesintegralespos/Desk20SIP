@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import PublicTicketForm from '@/components/public/PublicTicketForm'
+import { STAFF_ROLES } from '@/lib/roles'
 
 export default async function PublicTicketPage({
   params,
@@ -23,7 +24,7 @@ export default async function PublicTicketPage({
     notFound()
   }
 
-  const [categories, agents] = await Promise.all([prisma.category.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }), prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] }, active: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } })])
+  const [categories, agents] = await Promise.all([prisma.category.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }), prisma.user.findMany({ where: { role: { in: STAFF_ROLES }, active: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } })])
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">

@@ -52,6 +52,8 @@ export default async function CustomersPage({
         phone: true,
         location: true,
         address: true,
+        businessName: true,
+        taxId: true,
         organizationId: true,
         createdAt: true,
         organization: {

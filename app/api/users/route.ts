@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { validateUserPerformance } from '@/lib/user-performance'
+import { STAFF_ROLES, isAdmin, isManagedRole } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
     })
 
     // Solo ADMIN puede acceder a este endpoint
-    if (user?.role !== 'ADMIN') {
+    if (!isAdmin(user?.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }
@@ -37,9 +38,9 @@ export async function GET(request: Request) {
     const roleFilter = searchParams.get('role')
 
     // Build where clause
-    const where: any = { role: { in: ['ADMIN', 'AGENT'] } }
+    const where: any = { role: { in: STAFF_ROLES } }
     if (roleFilter) {
-      const roles = roleFilter.split(',').filter(role => ['ADMIN', 'AGENT'].includes(role))
+      const roles = roleFilter.split(',').filter(role => isManagedRole(role))
       where.role = { in: roles }
     }
 
@@ -90,7 +91,7 @@ export async function POST(request: Request) {
     })
 
     // Solo ADMIN puede crear usuarios
-    if (currentUser?.role !== 'ADMIN') {
+    if (!isAdmin(currentUser?.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }
@@ -109,7 +110,7 @@ export async function POST(request: Request) {
       )
     }
 
-    if (role && !['ADMIN', 'AGENT'].includes(role)) return NextResponse.json({ error: 'Los clientes se gestionan en Clientes' }, { status: 400 })
+    if (role && !isManagedRole(role)) return NextResponse.json({ error: 'Los clientes se gestionan en Clientes' }, { status: 400 })
 
     // Check if user exists
     const existingUser = await prisma.user.findUnique({

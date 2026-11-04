@@ -4,6 +4,7 @@ import { serviceDay } from '@/lib/support/order-display';
 import { serviceUser, serviceError, ServiceError } from '@/lib/support/server';
 import { eventSchema, eventTechIds, repeatSchema, repeatDates, repeatConflict } from '@/lib/schedule';
 import { randomUUID } from 'crypto';
+import { STAFF_ROLES } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
         SELECT "id", "revision", "payload" FROM "ServiceRecord"
         WHERE "kind" = 'schedule' AND (("payload"->>'date' >= ${from} AND "payload"->>'date' <= ${to}) OR "id" = ${include})
         ORDER BY "createdAt" ASC`),
-      prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] }, active: true }, select: { id: true, name: true, email: true, avatar: true }, orderBy: { name: 'asc' } }),
+      prisma.user.findMany({ where: { role: { in: STAFF_ROLES }, active: true }, select: { id: true, name: true, email: true, avatar: true }, orderBy: { name: 'asc' } }),
       prisma.user.findMany({ where: { role: 'CUSTOMER' }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } }),
     ]);
     return Response.json({ events: records.map(record => ({ ...record.payload as object, id: record.id, revision: record.revision })), engineers, clients, from, to });
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     if (!parsed.success) throw new ServiceError(parsed.error.issues[0].message);
     const techIds = Array.from(new Set(eventTechIds(parsed.data)));
     const event = { ...parsed.data, techId: techIds[0], techIds };
-    const technicians = await prisma.user.count({ where: { id: { in: techIds }, role: { in: ['ADMIN', 'AGENT'] } } });
+    const technicians = await prisma.user.count({ where: { id: { in: techIds }, role: { in: STAFF_ROLES } } });
     if (technicians !== techIds.length) throw new ServiceError('Ingeniero no válido');
     if (event.clientId && !await prisma.user.findFirst({ where: { id: event.clientId, role: 'CUSTOMER' } })) throw new ServiceError('Cliente no válido');
     // A new event can be repeated weekly or monthly until December 31; dates where an engineer

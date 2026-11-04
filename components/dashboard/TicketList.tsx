@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { TicketStatus, TicketPriority } from '@prisma/client'
+import { isAdmin as isAdminRole } from '@/lib/roles'
 
 interface Ticket {
   id: string
@@ -69,7 +70,7 @@ const priorityLabels = {
 export default function TicketList({ tickets, currentUserId }: TicketListProps) {
   const router = useRouter()
   const { data: session } = useSession()
-  const isAdmin = session?.user?.role === 'ADMIN'
+  const isAdmin = isAdminRole(session?.user?.role)
 
   const handleAssign = async (ticketId: string) => {
     try {

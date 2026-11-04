@@ -3,12 +3,13 @@ import { ServiceError, serviceError, serviceUser } from '@/lib/support/server'
 import { calculatePlan, initialPlan, leaderRoles, planSchema, type IncentivePlan, type SavedIncentivePlan } from '@/lib/incentives'
 import { incentiveMonth } from '@/lib/incentive-calculation'
 import { Prisma } from '@prisma/client'
+import { STAFF_ROLES, isAdmin } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 const kind = 'incentive-month'
 async function admin() {
   const user = await serviceUser()
-  if (user.role !== 'ADMIN') throw new ServiceError('Solo los administradores pueden gestionar incentivos', 403)
+  if (!isAdmin(user.role)) throw new ServiceError('Solo los administradores pueden gestionar incentivos', 403)
   return user
 }
 async function results(plan: IncentivePlan, db: Prisma.TransactionClient = prisma) {
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
     try { incentiveMonth(month) } catch { throw new ServiceError('Mes inválido') }
     const [records, staff, categories] = await Promise.all([
       prisma.serviceRecord.findMany({ where: { kind, id: { startsWith: `incentive:${month}:` } } }),
-      prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] } }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } }),
+      prisma.user.findMany({ where: { role: { in: STAFF_ROLES } }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } }),
       prisma.category.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     ])
     const plans = await Promise.all((Object.keys(leaderRoles) as IncentivePlan['leaderRole'][]).map(async role => {
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     let range: ReturnType<typeof incentiveMonth>
     try { range = incentiveMonth(plan.month) } catch { throw new ServiceError('Mes inválido') }
     if (range.start > new Date()) throw new ServiceError('Selecciona el mes actual o un mes anterior')
-    const people = await prisma.user.findMany({ where: { id: { in: [...plan.teamIds, plan.leaderId] }, role: { in: ['ADMIN', 'AGENT'] } }, select: { id: true, name: true, email: true } })
+    const people = await prisma.user.findMany({ where: { id: { in: [...plan.teamIds, plan.leaderId] }, role: { in: STAFF_ROLES } }, select: { id: true, name: true, email: true } })
     if ([...plan.teamIds, ...(plan.leaderId ? [plan.leaderId] : [])].some(id => !people.some(p => p.id === id))) throw new ServiceError('Líder o equipo inválido')
     const categoryIds = Array.from(new Set(plan.indicators.flatMap(i => i.categoryIds)))
     if (await prisma.category.count({ where: { id: { in: categoryIds } } }) !== categoryIds.length) throw new ServiceError('Categoría inválida')

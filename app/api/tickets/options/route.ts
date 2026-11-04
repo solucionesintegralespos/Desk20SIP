@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { STAFF_ROLES } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   if (!await getServerSession(authOptions)) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   // Only active staff can receive new assignments.
-  const agents = await prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] }, active: true }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } })
+  const agents = await prisma.user.findMany({ where: { role: { in: STAFF_ROLES }, active: true }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } })
   const categories = await prisma.category.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
   return NextResponse.json({ agents, categories })
 }

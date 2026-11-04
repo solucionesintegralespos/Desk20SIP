@@ -9,6 +9,7 @@ import Pagination from '@/components/tickets/Pagination'
 import { dailyRange } from '@/lib/daily-filter'
 import { personalDashboardWhere } from '@/lib/personal-dashboard'
 import { parseTicketSort, ticketOrderBy } from '@/lib/tickets-sort'
+import { STAFF_ROLES } from '@/lib/roles'
 
 interface SearchParams {
   status?: string
@@ -146,7 +147,7 @@ export default async function TicketsPage({
     prisma.user.findMany({
       where: {
         role: {
-          in: ['AGENT', 'ADMIN']
+          in: STAFF_ROLES
         }
       },
       select: {

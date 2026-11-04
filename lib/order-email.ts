@@ -25,7 +25,7 @@ const MAX_LOGO_BYTES = 512 * 1024
 
 // Only local files (uploads or /public/brand) are embedded: remote URLs could reach
 // internal hosts, and oversized uploads would bloat every email.
-async function brandLogo(orgLogo: string) {
+export async function brandLogo(orgLogo: string) {
   const path = orgLogo || '/brand/sip-logo-mail.png'
   const match = /^\/(uploads|brand)\/([a-zA-Z0-9._-]+)$/.exec(path)
   if (!match || match[2].includes('..')) return undefined

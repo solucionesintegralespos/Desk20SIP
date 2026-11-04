@@ -39,12 +39,14 @@ const roleLabels = {
   ADMIN: 'Administrador',
   AGENT: 'Agente',
   CUSTOMER: 'Cliente',
+  ACCOUNTING: 'Contabilidad',
 }
 
 const roleColors = {
   ADMIN: 'bg-purple-100 text-purple-800',
   AGENT: 'bg-blue-100 text-blue-800',
   CUSTOMER: 'bg-green-100 text-green-800',
+  ACCOUNTING: 'bg-amber-100 text-amber-800',
 }
 
 export default function UsersTable({ users, currentRole, currentUserId }: UsersTableProps) {

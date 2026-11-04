@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getAvailableGeminiModelsDetailed } from '@/lib/ai'
+import { isAdmin } from '@/lib/roles'
 
 export async function POST(request: Request) {
   try {
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
       select: { role: true }
     })
 
-    if (user?.role !== 'ADMIN') {
+    if (!isAdmin(user?.role)) {
       return NextResponse.json({ error: 'Acceso denegado. Solo administradores pueden listar modelos de IA.' }, { status: 403 })
     }
 

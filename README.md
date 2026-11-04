@@ -2,6 +2,16 @@
 
 Sistema de gestión de tickets y soporte al cliente inspirado en Zendesk, construido con Next.js, PostgreSQL y Prisma.
 
+Contabilidad (administradores y el rol Contabilidad) agrupa Catálogo (productos con precio sugerido e
+impuestos, sin borrado físico), Cotizaciones (cliente, productos con precio editable por línea, impuesto
+global con IVA 19 % por defecto, vista previa en vivo con el mismo motor PDF, descarga y envío por correo)
+y Cuentas de cobro (ocasionales y recurrentes con plantillas mensuales y generación masiva seleccionable).
+Cada cliente tiene su consecutivo propio de cuentas de cobro, solo numérico (`01`, `02`, … `10`), reservado
+en la transacción de emisión; los clientes registran razón social, NIT o cédula y número inicial. Cada
+cuenta conserva su snapshot y su PDF, tiene enlace público con token aleatorio (regenerable o desactivable)
+y puede anularse sin liberar su número. Requiere la migración `supabase/migrations/202611040001_accounting_quotes_billing.sql`
+(ver `docs/accounting-module.md`). Validación: `npm run test:accounting` y `npm run test:billing-numbering`.
+
 Incentivos (solo administradores) permite consultar cada mes de Colombia para los líderes
 de Mesa de Ayuda, Cizaro y FE. Mesa de Ayuda parte de los 14 indicadores de referencia;
 los otros dos cargos quedan sin reglas. Asigna a la persona responsable y revisa las

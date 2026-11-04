@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import CreateCategoryForm from '@/components/categories/CreateCategoryForm'
+import { isAdmin } from '@/lib/roles'
 
 export const metadata: Metadata = {
   title: 'Nueva Categoría | SIP SOPORTE',
@@ -26,7 +27,7 @@ export default async function NewCategoryPage() {
   }
 
   // Validar que CUSTOMER no pueda acceder a esta página
-  if (user.role !== 'ADMIN') {
+  if (!isAdmin(user.role)) {
     redirect('/dashboard')
   }
 

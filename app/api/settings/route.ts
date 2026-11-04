@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { isAdmin } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +24,7 @@ export async function GET() {
     })
 
     // Solo ADMIN puede acceder a la configuración
-    if (user?.role !== 'ADMIN') {
+    if (!isAdmin(user?.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
     })
 
     // Solo ADMIN puede modificar la configuración
-    if (user?.role !== 'ADMIN') {
+    if (!isAdmin(user?.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }

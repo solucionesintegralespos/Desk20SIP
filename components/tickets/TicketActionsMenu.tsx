@@ -6,6 +6,7 @@ import TechnicianPicker from './TechnicianPicker'
 import { toast } from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { TicketStatus, TicketPriority } from '@prisma/client'
+import { isAdmin as isAdminRole } from '@/lib/roles'
 
 interface TicketActionsMenuProps {
   ticket: {
@@ -29,7 +30,7 @@ interface TicketActionsMenuProps {
 export default function TicketActionsMenu({ ticket, agents, onClose }: TicketActionsMenuProps) {
   const router = useRouter()
   const { data: session } = useSession()
-  const isAdmin = session?.user?.role === 'ADMIN'
+  const isAdmin = isAdminRole(session?.user?.role)
   const getInitialSelected = () => {
     if (ticket.assignments && ticket.assignments.length > 0) {
       return ticket.assignments.map(a => a.user.id)

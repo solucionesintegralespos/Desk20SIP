@@ -127,6 +127,7 @@ export default function CreateUserForm() {
           >
             <option value="AGENT">Agente</option>
             <option value="ADMIN">Administrador</option>
+            <option value="ACCOUNTING">Contabilidad</option>
           </select>
           <p className="text-sm text-gray-500 mt-1">
             Define el nivel de acceso del usuario

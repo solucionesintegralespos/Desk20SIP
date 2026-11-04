@@ -9,6 +9,7 @@ import { ArrowLeft, User } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useTicketsListHref } from '@/lib/tickets-list-query'
+import { isAdmin as isAdminRole } from '@/lib/roles'
 
 interface TicketHeaderProps {
   ticket: {
@@ -49,7 +50,7 @@ export default function TicketHeader({ ticket, currentUserRole }: TicketHeaderPr
 
   // Determinar si es ADMIN de forma inmediata vía props del servidor o fallback a sesión cliente
   const effectiveRole = currentUserRole || session?.user?.role || ''
-  const isAdmin = effectiveRole === 'ADMIN'
+  const isAdmin = isAdminRole(effectiveRole)
   const isCustomer = effectiveRole === 'CUSTOMER'
 
   const getInitialSelected = () => {

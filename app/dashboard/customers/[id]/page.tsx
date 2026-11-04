@@ -2,6 +2,7 @@ import { getDashboardSession, getDashboardUser } from "@/lib/dashboard-data"
 import { redirect, notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import EditCustomerForm from '@/components/customers/EditCustomerForm'
+import { peekBillingNumber } from '@/lib/accounting/billing'
 
 export default async function EditCustomerPage({
   params,
@@ -39,6 +40,9 @@ export default async function EditCustomerPage({
       location: true,
       address: true,
       emailNotifications: true,
+      businessName: true,
+      taxId: true,
+      billingStartNumber: true,
       createdAt: true,
       _count: {
         select: {
@@ -51,6 +55,9 @@ export default async function EditCustomerPage({
   if (!customer) {
     notFound()
   }
+
+  // Tells the form whether the billing sequence already started and which number comes next.
+  const billingSequence = (await peekBillingNumber(params.id)) || undefined
 
   // AGENT y ADMIN ven todos los tickets
   
@@ -66,7 +73,7 @@ export default async function EditCustomerPage({
             <p className="text-gray-600 mt-1">Actualiza la información del cliente</p>
           </div>
 
-          <EditCustomerForm customer={customer} />
+          <EditCustomerForm customer={customer} billingSequence={billingSequence} />
         </div>
       </div></>
   )

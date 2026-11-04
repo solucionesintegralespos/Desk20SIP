@@ -6,6 +6,7 @@ import { validateTemplate, validateChecklist, validateOrder, validText } from '@
 import type { Template, ChecklistRun, WorkOrder } from '@/lib/support/model';
 import { orderCreator } from '@/lib/support/order-owner';
 import { sendOrderCreatedEmail } from '@/lib/order-email';
+import { STAFF_ROLES, isAdmin } from '@/lib/roles';
 type RecordData = (Template | ChecklistRun | WorkOrder) & {
     _revision?: number;
 };
@@ -19,7 +20,7 @@ export async function POST(request: Request, { params }: {
         const kind = params.entity;
         if (!['orders', 'checklists', 'templates'].includes(kind))
             throw new ServiceError('Proceso desconocido', 404);
-        if (kind === 'templates' && user.role !== 'ADMIN')
+        if (kind === 'templates' && !isAdmin(user.role))
             throw new ServiceError('Solo administradores pueden modificar plantillas', 403);
         const raw = await request.text();
         if (Buffer.byteLength(raw) > 30 * 1024 * 1024)
@@ -67,7 +68,7 @@ export async function POST(request: Request, { params }: {
                 if ((!existing && record.techId !== user.id) ||
                     (existing && record.techId !== existing.techId) ||
                     (existing && kind === 'orders' && createdById !== user.id) ||
-                    (existing && kind === 'checklists' && user.role !== 'ADMIN' && existing.techId !== user.id))
+                    (existing && kind === 'checklists' && !isAdmin(user.role) && existing.techId !== user.id))
                     throw new ServiceError('Solo puedes modificar tus procesos', 403);
                 const [client, tech] = await Promise.all([tx.user.findUnique({ where: { id: record.clientId } }), tx.user.findUnique({ where: { id: record.techId } })]);
                 if (!client || client.role !== 'CUSTOMER' || !tech || tech.role === 'CUSTOMER')
@@ -115,7 +116,7 @@ export async function POST(request: Request, { params }: {
                     const o = record as WorkOrder;
                     if (o.ticketId) {
                         const ticket = await tx.ticket.findUnique({ where: { id: o.ticketId } });
-                        if (!ticket || ticket.customerId !== clientId || user.role !== 'ADMIN' && !(await tx.ticketAssignee.findUnique({ where: { ticketId_userId: { ticketId: ticket.id, userId: user.id } } })))
+                        if (!ticket || ticket.customerId !== clientId || !isAdmin(user.role) && !(await tx.ticketAssignee.findUnique({ where: { ticketId_userId: { ticketId: ticket.id, userId: user.id } } })))
                             throw new ServiceError('El ticket no corresponde al cliente o responsable');
                         // A new link must point to a ticket still in progress; an existing link is kept as is.
                         if (o.ticketId !== (previous as WorkOrder | undefined)?.ticketId && !['OPEN', 'PENDING'].includes(ticket.status))
@@ -123,14 +124,14 @@ export async function POST(request: Request, { params }: {
                     }
                     if (o.checklistId) {
                         const checklist = await tx.serviceRecord.findUnique({ where: { id: o.checklistId } });
-                        if (!checklist || checklist.kind !== 'checklists' || checklist.clientId !== clientId || user.role !== 'ADMIN' && checklist.techId !== user.id)
+                        if (!checklist || checklist.kind !== 'checklists' || checklist.clientId !== clientId || !isAdmin(user.role) && checklist.techId !== user.id)
                             throw new ServiceError('El checklist no corresponde al cliente o responsable');
                     }
                     // The responsible technician always takes part; others must be support staff.
                     if (o.techIds !== undefined && (!Array.isArray(o.techIds) || o.techIds.length > 20 || o.techIds.some(id => !validText(id, 100))))
                         throw new ServiceError('Técnicos inválidos');
                     const techIds = Array.from(new Set([techId as string, ...(o.techIds || [])]));
-                    if (await tx.user.count({ where: { id: { in: techIds }, role: { in: ['ADMIN', 'AGENT'] } } }) !== techIds.length)
+                    if (await tx.user.count({ where: { id: { in: techIds }, role: { in: STAFF_ROLES } } }) !== techIds.length)
                         throw new ServiceError('Selecciona técnicos válidos');
                     const serviceTime = o.startTime === undefined ? (previous as WorkOrder | undefined)?.startTime || now : o.startTime;
                     if (!validText(serviceTime, 100) || !Number.isFinite(Date.parse(serviceTime)))

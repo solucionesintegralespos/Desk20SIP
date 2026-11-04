@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { formatBillingNumber } from '@/lib/accounting/format'
 
 interface EditCustomerFormProps {
   customer: {
@@ -14,10 +15,15 @@ interface EditCustomerFormProps {
     location: string | null
     address: string | null
     emailNotifications: boolean
+    businessName?: string | null
+    taxId?: string | null
+    billingStartNumber?: number | null
   }
+  /** Next billing account number of this customer and whether the sequence already started. */
+  billingSequence?: { next: number; started: boolean }
 }
 
-export default function EditCustomerForm({ customer }: EditCustomerFormProps) {
+export default function EditCustomerForm({ customer, billingSequence }: EditCustomerFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -28,10 +34,20 @@ export default function EditCustomerForm({ customer }: EditCustomerFormProps) {
     location: customer.location || '',
     address: customer.address || '',
     emailNotifications: customer.emailNotifications,
+    businessName: customer.businessName || '',
+    taxId: customer.taxId || '',
+    billingStartNumber: String(customer.billingStartNumber || 1),
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // Empty means 1; anything that is not a positive integer is rejected before sending.
+    const startText = formData.billingStartNumber.trim()
+    const billingStartNumber = startText === '' ? 1 : Number(startText)
+    if (!/^[0-9]+$/.test(startText || '1') || !Number.isInteger(billingStartNumber) || billingStartNumber < 1) {
+      setError('El número inicial de cuentas de cobro debe ser un entero mayor o igual a 1')
+      return
+    }
     setLoading(true)
     setError('')
 
@@ -48,6 +64,9 @@ export default function EditCustomerForm({ customer }: EditCustomerFormProps) {
           phone: formData.phone.trim(),
           location: formData.location.trim(),
           address: formData.address.trim(),
+          businessName: formData.businessName.trim(),
+          taxId: formData.taxId.trim(),
+          billingStartNumber,
         }),
       })
 
@@ -183,6 +202,60 @@ export default function EditCustomerForm({ customer }: EditCustomerFormProps) {
             rows={3}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
+        </div>
+
+        <div className="pt-4 border-t">
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">Datos de facturación (opcionales)</h3>
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Razón social
+              </label>
+              <input
+                type="text"
+                maxLength={200}
+                value={formData.businessName}
+                onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Nombre legal de la empresa"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                NIT o cédula de ciudadanía
+              </label>
+              <input
+                type="text"
+                maxLength={200}
+                value={formData.taxId}
+                onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="901.392.637-0 o 1.099.206.815"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Número inicial de cuentas de cobro
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                value={formData.billingStartNumber}
+                onChange={(e) => setFormData({ ...formData, billingStartNumber: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="1"
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                {billingSequence?.started
+                  ? `Este cliente ya tiene cuentas de cobro; la próxima será la N.º ${formatBillingNumber(billingSequence.next)}. Cambiar el número inicial no afecta la secuencia en uso.`
+                  : 'Número con el que empezará la numeración de las cuentas de cobro de este cliente. Si se deja vacío se usa 1.'}
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-between items-center pt-4 border-t">

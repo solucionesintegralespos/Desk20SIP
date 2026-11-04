@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { TicketStatus, TicketPriority } from '@prisma/client'
+import { STAFF_ROLES, isAdmin } from '@/lib/roles'
 
 export async function POST(request: Request) {
   try {
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No disponible' }, { status: 404 })
     }
     const actor = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-    if (actor?.role !== 'ADMIN') {
+    if (!isAdmin(actor?.role)) {
       return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 })
     }
 
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
         select: { id: true }
       }),
       prisma.user.findMany({
-        where: { role: { in: ['AGENT', 'ADMIN'] } },
+        where: { role: { in: STAFF_ROLES } },
         select: { id: true }
       })
     ])

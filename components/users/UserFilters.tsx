@@ -43,6 +43,7 @@ export default function UserFilters({ currentRole, view, onViewChange }: UserFil
           <option value="">Todos los roles</option>
           <option value="ADMIN">Administrador</option>
           <option value="AGENT">Agente</option>
+          <option value="ACCOUNTING">Contabilidad</option>
         </select>
 
         {currentRole && (

@@ -170,6 +170,7 @@ export default function EditUserModal({ user, onClose }: EditUserModalProps) {
               >
                 <option value="ADMIN">Administrador</option>
                 <option value="AGENT">Agente</option>
+                <option value="ACCOUNTING">Contabilidad</option>
               </select>
             </div>
 

@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { parseBillingText, parseBillingStartNumber } from '@/lib/customer-billing-fields'
+import { isStaff } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,7 +29,7 @@ export async function GET(
     })
 
     // Solo AGENT y ADMIN pueden ver customers
-    if (!user || !['AGENT', 'ADMIN'].includes(user.role)) {
+    if (!user || !isStaff(user.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }
@@ -46,6 +48,9 @@ export async function GET(
         phone: true,
         location: true,
         address: true,
+        businessName: true,
+        taxId: true,
+        billingStartNumber: true,
         createdAt: true,
       }
     })
@@ -88,7 +93,7 @@ export async function PATCH(
     })
 
     // Solo AGENT y ADMIN pueden editar customers
-    if (!user || !['AGENT', 'ADMIN'].includes(user.role)) {
+    if (!user || !isStaff(user.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }
@@ -96,6 +101,12 @@ export async function PATCH(
     }
 
     const data = await request.json()
+    const businessName = 'businessName' in data ? parseBillingText(data.businessName, 'La razón social') : { value: undefined }
+    if ('error' in businessName) return NextResponse.json({ error: businessName.error }, { status: 400 })
+    const taxId = 'taxId' in data ? parseBillingText(data.taxId, 'El NIT o cédula') : { value: undefined }
+    if ('error' in taxId) return NextResponse.json({ error: taxId.error }, { status: 400 })
+    const billingStartNumber = parseBillingStartNumber(data.billingStartNumber)
+    if ('error' in billingStartNumber) return NextResponse.json({ error: billingStartNumber.error }, { status: 400 })
     let customerEmail: string | null | undefined
     if ('email' in data) {
       if (typeof data.email === 'string' && data.email.trim()) {
@@ -146,6 +157,9 @@ export async function PATCH(
           location: data.location,
           address: data.address,
           emailNotifications: data.emailNotifications,
+          ...(businessName.value !== undefined ? { businessName: businessName.value } : {}),
+          ...(taxId.value !== undefined ? { taxId: taxId.value } : {}),
+          ...(billingStartNumber.value !== undefined ? { billingStartNumber: billingStartNumber.value } : {}),
         },
         select: {
           id: true,
@@ -155,6 +169,9 @@ export async function PATCH(
           location: true,
           address: true,
           emailNotifications: true,
+          businessName: true,
+          taxId: true,
+          billingStartNumber: true,
         }
       })
 

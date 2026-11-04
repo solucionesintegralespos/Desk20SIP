@@ -17,6 +17,8 @@ interface Customer {
   phone: string | null
   location: string | null
   address: string | null
+  businessName?: string | null
+  taxId?: string | null
   organizationId: string | null
   createdAt: Date
   organization: {
@@ -306,6 +308,12 @@ export default function CustomersTable({ customers, hasCustomers, query }: Custo
                   <Mail className="h-4 w-4 mr-2 flex-shrink-0" />
                   <span className="truncate">{customer.email}</span>
                 </div>
+
+                {(customer.businessName || customer.taxId) && (
+                  <div className="text-xs text-gray-500 truncate" title="Razón social y NIT / cédula">
+                    {[customer.businessName, customer.taxId && `NIT/CC ${customer.taxId}`].filter(Boolean).join(' · ')}
+                  </div>
+                )}
                 
                 {customer.phone && (
                   <div className="flex items-center text-sm text-gray-600">

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import UsersTable from '@/components/users/UsersTable'
 import CreateUserButton from '@/components/users/CreateUserButton'
+import { STAFF_ROLES, isAdmin, isStaff } from '@/lib/roles'
 
 
 interface SearchParams {
@@ -28,13 +29,13 @@ export default async function UsersPage({
   }
 
   // Validar que solo ADMIN pueda acceder a esta página
-  if (user.role !== 'ADMIN') {
+  if (!isAdmin(user.role)) {
     redirect('/dashboard')
   }
 
-  const whereClause: any = { role: { in: ['ADMIN', 'AGENT'] } }
+  const whereClause: any = { role: { in: STAFF_ROLES } }
   
-  if (searchParams.role && ['ADMIN', 'AGENT'].includes(searchParams.role)) {
+  if (searchParams.role && isStaff(searchParams.role)) {
     whereClause.role = searchParams.role
   }
 
@@ -65,7 +66,7 @@ export default async function UsersPage({
     prisma.$transaction([
       prisma.user.count({ where: { role: 'ADMIN' } }),
       prisma.user.count({ where: { role: 'AGENT' } }),
-      prisma.user.count({ where: { role: { in: ['ADMIN', 'AGENT'] } } }),
+      prisma.user.count({ where: { role: { in: STAFF_ROLES } } }),
       prisma.ticket.count({ where: { status: 'OPEN' } })
     ])
   ])

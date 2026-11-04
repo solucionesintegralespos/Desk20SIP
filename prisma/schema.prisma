@@ -26,6 +26,7 @@ enum UserRole {
   ADMIN
   AGENT
   CUSTOMER
+  ACCOUNTING
 }
 
 model User {
@@ -47,6 +48,11 @@ model User {
   active             Boolean      @default(true)
   twoFactorEnabled   Boolean      @default(false)
   twoFactorSecret    String?
+  // Billing identity of customers: legal name and NIT / cedula are optional.
+  businessName       String?
+  taxId              String?
+  // First billing account number for this customer; applies until the sequence starts.
+  billingStartNumber Int          @default(1)
   organizationId     String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
@@ -59,6 +65,10 @@ model User {
   interactions      Interaction[]
   serviceClients    ServiceRecord[] @relation("ServiceClient")
   serviceAssigned   ServiceRecord[] @relation("ServiceTechnician")
+  quotes            Quote[]          @relation("QuoteCustomer")
+  billingAccounts   BillingAccount[] @relation("BillingCustomer")
+  billingTemplates  BillingTemplate[] @relation("BillingTemplateCustomer")
+  billingSequence   CustomerBillingSequence?
   @@index([role])
 }
 
@@ -222,4 +232,152 @@ model ServiceAuditEvent {
   action    String
   createdAt DateTime @default(now())
   @@index([entityId])
+}
+
+// ---------------------------------------------------------------------------
+// Accounting: quote catalog, quotes and billing accounts (cuentas de cobro).
+// Documents keep snapshots of the customer, company, products and taxes they used,
+// so later catalog edits never change what was issued.
+// ---------------------------------------------------------------------------
+
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  // Suggested unit price; editable per quote line without touching the catalog.
+  price       Decimal     @db.Decimal(14, 2)
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  quoteItems  QuoteItem[]
+
+  @@index([active, name])
+}
+
+model Tax {
+  id        String   @id @default(cuid())
+  name      String
+  // Percentage, e.g. 19.00 for IVA 19 %.
+  rate      Decimal  @db.Decimal(7, 4)
+  active    Boolean  @default(true)
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  quotes    Quote[]
+
+  @@index([active])
+}
+
+model Quote {
+  id               String      @id @default(cuid())
+  number           Int         @unique @default(autoincrement())
+  customerId       String
+  customer         User        @relation("QuoteCustomer", fields: [customerId], references: [id])
+  // Customer and company data as they were when the quote was issued.
+  customerSnapshot Json
+  companySnapshot  Json
+  taxId            String?
+  tax              Tax?        @relation(fields: [taxId], references: [id])
+  taxName          String?
+  taxRate          Decimal?    @db.Decimal(7, 4)
+  subtotal         Decimal     @db.Decimal(14, 2)
+  taxAmount        Decimal     @db.Decimal(14, 2)
+  total            Decimal     @db.Decimal(14, 2)
+  title            String      @default("Cotización")
+  notes            String?
+  conditions       String?
+  createdById      String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  items            QuoteItem[]
+
+  @@index([customerId, createdAt])
+  @@index([createdAt])
+}
+
+model QuoteItem {
+  id          String   @id @default(cuid())
+  quoteId     String
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
+  position    Int
+  // Snapshot of the product at quote time.
+  name        String
+  description String?
+  quantity    Decimal  @db.Decimal(12, 2)
+  unitPrice   Decimal  @db.Decimal(14, 2)
+  total       Decimal  @db.Decimal(14, 2)
+
+  @@index([quoteId])
+  @@index([productId])
+}
+
+enum BillingFrequency {
+  MONTHLY
+}
+
+enum BillingAccountStatus {
+  ISSUED
+  VOID
+}
+
+// Recurring billing configuration. It never consumes numbers: only generated accounts do.
+model BillingTemplate {
+  id          String           @id @default(cuid())
+  customerId  String
+  customer    User             @relation("BillingTemplateCustomer", fields: [customerId], references: [id])
+  concept     String
+  total       Decimal          @db.Decimal(14, 2)
+  frequency   BillingFrequency @default(MONTHLY)
+  active      Boolean          @default(true)
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  accounts    BillingAccount[]
+
+  @@index([customerId])
+  @@index([active, customerId])
+}
+
+// One issued cuenta de cobro. `number` is the customer's own consecutive (01, 02, ...).
+model BillingAccount {
+  id            String               @id @default(cuid())
+  customerId    String
+  customer      User                 @relation("BillingCustomer", fields: [customerId], references: [id])
+  number        Int
+  templateId    String?
+  template      BillingTemplate?     @relation(fields: [templateId], references: [id])
+  // Billing period of recurring accounts (YYYY-MM); one account per template and period.
+  period        String?
+  concept       String
+  total         Decimal              @db.Decimal(14, 2)
+  // Everything the document shows (customer, company, amount in words, dates).
+  snapshot      Json
+  status        BillingAccountStatus @default(ISSUED)
+  publicToken   String               @unique
+  publicEnabled Boolean              @default(true)
+  // PDF generated at issue time; the download, the email and the public link serve it.
+  pdf           Bytes?
+  issuedAt      DateTime             @default(now())
+  dueAt         DateTime?
+  voidedAt      DateTime?
+  voidReason    String?
+  createdById   String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@unique([customerId, number])
+  @@unique([templateId, period])
+  @@index([customerId, createdAt])
+  @@index([createdAt])
+  @@index([status])
+}
+
+// Per-customer consecutive. Updated with a single UPSERT inside the issuing transaction,
+// so simultaneous requests for one customer serialize on this row and never share a number.
+model CustomerBillingSequence {
+  customerId String @id
+  customer   User   @relation(fields: [customerId], references: [id])
+  lastNumber Int
 }

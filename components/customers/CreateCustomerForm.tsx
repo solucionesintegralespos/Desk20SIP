@@ -17,6 +17,9 @@ export default function CreateCustomerForm() {
     phone: '',
     location: '',
     address: '',
+    businessName: '',
+    taxId: '',
+    billingStartNumber: '1',
   })
 
   useEffect(() => {
@@ -32,6 +35,14 @@ export default function CreateCustomerForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // Empty means 1; anything that is not a positive integer is rejected before sending.
+    const startText = formData.billingStartNumber.trim()
+    const billingStartNumber = startText === '' ? 1 : Number(startText)
+    if (!/^[0-9]+$/.test(startText || '1') || !Number.isInteger(billingStartNumber) || billingStartNumber < 1) {
+      setError('El número inicial de cuentas de cobro debe ser un entero mayor o igual a 1')
+      return
+    }
+
     setLoading(true)
     setError('')
 
@@ -48,6 +59,9 @@ export default function CreateCustomerForm() {
           phone: formData.phone.trim(),
           location: formData.location.trim(),
           address: formData.address.trim(),
+          businessName: formData.businessName.trim(),
+          taxId: formData.taxId.trim(),
+          billingStartNumber,
         }),
       })
 
@@ -173,6 +187,58 @@ export default function CreateCustomerForm() {
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             placeholder="Dirección completa del cliente"
           />
+        </div>
+
+        <div className="pt-4 border-t">
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">Datos de facturación (opcionales)</h3>
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Razón social
+              </label>
+              <input
+                type="text"
+                maxLength={200}
+                value={formData.businessName}
+                onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Nombre legal de la empresa"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                NIT o cédula de ciudadanía
+              </label>
+              <input
+                type="text"
+                maxLength={200}
+                value={formData.taxId}
+                onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="901.392.637-0 o 1.099.206.815"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Número inicial de cuentas de cobro
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                value={formData.billingStartNumber}
+                onChange={(e) => setFormData({ ...formData, billingStartNumber: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="1"
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                Número con el que empezará la numeración de las cuentas de cobro de este cliente. Si se deja vacío se usa 1.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-end space-x-3 pt-4 border-t">

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { isAdmin } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -124,7 +125,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const allowed = ['subject', 'description', 'status', 'priority', 'type', 'categoryId', 'hours', 'tags', 'attachments', 'assigneeId', 'assigneeIds']
     if (Object.keys(body).some(key => !allowed.includes(key))) return NextResponse.json({ error: 'Campo no permitido' }, { status: 400 })
     const isChangingAssignees = 'assigneeIds' in body || 'assigneeId' in body
-    if (isChangingAssignees && actor.role !== 'ADMIN') {
+    if (isChangingAssignees && !isAdmin(actor.role)) {
       return NextResponse.json({ error: 'Solo los administradores pueden cambiar los usuarios asignados' }, { status: 403 })
     }
     for (const [key, values] of Object.entries({ status: ['OPEN', 'PENDING', 'CLOSED'], priority: ['LOW', 'NORMAL', 'HIGH', 'URGENT'], type: ['INCIDENT', 'CHANGE_REQUEST', 'PROJECT'] })) {

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
+import { parseBillingText, parseBillingStartNumber } from '@/lib/customer-billing-fields'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,7 +32,14 @@ export async function POST(request: Request) {
       )
     }
 
-    let { name, email, password, phone, location, address } = await request.json()
+    const body = await request.json()
+    let { name, email, password, phone, location, address } = body
+    const businessName = parseBillingText(body.businessName, 'La razón social')
+    if ('error' in businessName) return NextResponse.json({ error: businessName.error }, { status: 400 })
+    const taxId = parseBillingText(body.taxId, 'El NIT o cédula')
+    if ('error' in taxId) return NextResponse.json({ error: taxId.error }, { status: 400 })
+    const billingStartNumber = parseBillingStartNumber(body.billingStartNumber)
+    if ('error' in billingStartNumber) return NextResponse.json({ error: billingStartNumber.error }, { status: 400 })
 
     if (typeof name !== 'string' || !name.trim()) {
       return NextResponse.json(
@@ -111,6 +119,9 @@ export async function POST(request: Request) {
         phone,
         location,
         address,
+        businessName: businessName.value,
+        taxId: taxId.value,
+        billingStartNumber: billingStartNumber.value ?? 1,
       },
       select: {
         id: true,
@@ -118,6 +129,10 @@ export async function POST(request: Request) {
         email: true,
         phone: true,
         location: true,
+        address: true,
+        businessName: true,
+        taxId: true,
+        billingStartNumber: true,
       }
     })
 
@@ -167,6 +182,8 @@ export async function GET(request: Request) {
         phone: true,
         location: true,
         address: true,
+        businessName: true,
+        taxId: true,
         createdAt: true,
         organization: {
           select: {

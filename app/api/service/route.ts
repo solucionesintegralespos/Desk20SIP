@@ -3,6 +3,7 @@ import { serviceUser, serviceError } from '@/lib/support/server';
 import { createSeed } from '@/lib/support/seed';
 import { serviceList } from '@/lib/support/list';
 import { dailyRange } from '@/lib/daily-filter';
+import { STAFF_ROLES, isAdmin } from '@/lib/roles';
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
     try {
@@ -18,13 +19,13 @@ export async function GET(request: Request) {
         const linkedTicketIds = records.flatMap(r => r.kind === 'orders' && typeof (r.payload as { ticketId?: unknown })?.ticketId === 'string' ? [(r.payload as { ticketId: string }).ticketId] : []);
         const [customers, staff, tickets] = await Promise.all([
             scope === 'templates' ? [] : prisma.user.findMany({ where: { role: 'CUSTOMER' }, select: { id: true, name: true, email: true, phone: true, location: true } }),
-            scope === 'templates' ? [] : prisma.user.findMany({ where: { role: { in: ['ADMIN', 'AGENT'] } }, select: { id: true, name: true, email: true, role: true, active: true } }),
+            scope === 'templates' ? [] : prisma.user.findMany({ where: { role: { in: STAFF_ROLES } }, select: { id: true, name: true, email: true, role: true, active: true } }),
             scope && scope !== 'orders' ? [] : prisma.ticket.findMany({ where: { OR: [
-                { status: { in: ['OPEN', 'PENDING'] }, ...(user.role === 'ADMIN' ? {} : { assignments: { some: { userId: user.id } } }) },
+                { status: { in: ['OPEN', 'PENDING'] }, ...(isAdmin(user.role) ? {} : { assignments: { some: { userId: user.id } } }) },
                 ...(linkedTicketIds.length ? [{ id: { in: linkedTicketIds } }] : []),
             ] }, select: { id: true, number: true, customerId: true, subject: true, status: true }, orderBy: { number: 'desc' } })
         ]);
-        const mapUser = (u: typeof user) => ({ ...u, name: u.name || u.email || 'Sin nombre', email: u.email || '', role: u.role === 'ADMIN' ? 'admin' : 'tech' });
+        const mapUser = (u: typeof user) => ({ ...u, name: u.name || u.email || 'Sin nombre', email: u.email || '', role: isAdmin(u.role) ? 'admin' : 'tech' });
         const collect = (kind: string) => records.filter(r => r.kind === kind).map(r => ({ ...r.payload as object, _revision: r.revision }));
         const templates = collect('templates');
         const storedIds = new Set(records.filter(r => r.kind === 'templates').map(r => r.id));

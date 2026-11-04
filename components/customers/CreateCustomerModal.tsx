@@ -33,6 +33,9 @@ export default function CreateCustomerModal({
     phone: '',
     location: '',
     address: '',
+    businessName: '',
+    taxId: '',
+    billingStartNumber: '1',
   })
 
   if (!isOpen) return null
@@ -58,6 +61,14 @@ export default function CreateCustomerModal({
       return
     }
 
+    // Empty means 1; anything that is not a positive integer is rejected before sending.
+    const startText = formData.billingStartNumber.trim()
+    const billingStartNumber = startText === '' ? 1 : Number(startText)
+    if (!/^[0-9]+$/.test(startText || '1') || !Number.isInteger(billingStartNumber) || billingStartNumber < 1) {
+      setError('El número inicial de cuentas de cobro debe ser un entero mayor o igual a 1')
+      return
+    }
+
     setLoading(true)
     try {
       const response = await fetch('/api/customers', {
@@ -71,6 +82,9 @@ export default function CreateCustomerModal({
           phone: formData.phone.trim() || undefined,
           location: formData.location.trim() || undefined,
           address: formData.address.trim() || undefined,
+          businessName: formData.businessName.trim() || undefined,
+          taxId: formData.taxId.trim() || undefined,
+          billingStartNumber,
         }),
       })
 
@@ -201,6 +215,52 @@ export default function CreateCustomerModal({
               value={formData.address}
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
               placeholder="Calle 100 # 15-20"
+              className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Razón social <span className="text-xs text-gray-500 font-normal">(Opcional)</span>
+              </label>
+              <input
+                type="text"
+                maxLength={200}
+                value={formData.businessName}
+                onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
+                placeholder="Nombre legal de la empresa"
+                className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                NIT o cédula de ciudadanía <span className="text-xs text-gray-500 font-normal">(Opcional)</span>
+              </label>
+              <input
+                type="text"
+                maxLength={200}
+                value={formData.taxId}
+                onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
+                placeholder="901.392.637-0 o 1.099.206.815"
+                className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Número inicial de cuentas de cobro <span className="text-xs text-gray-500 font-normal">(Opcional, por defecto 1)</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              value={formData.billingStartNumber}
+              onChange={(e) => setFormData({ ...formData, billingStartNumber: e.target.value })}
+              placeholder="1"
               className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>

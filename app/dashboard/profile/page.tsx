@@ -2,6 +2,7 @@ import { getDashboardSession, getDashboardUser } from "@/lib/dashboard-data"
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import ProfileForm from '@/components/profile/ProfileForm'
+import { isAdmin, roleLabels } from '@/lib/roles'
 
 export default async function ProfilePage() {
   const session = await getDashboardSession()
@@ -46,12 +47,11 @@ export default async function ProfilePage() {
                   <h2 className="text-xl font-semibold text-gray-900">{user.name}</h2>
                   <p className="text-sm text-gray-500">{user.email}</p>
                   <span className={`mt-3 px-3 py-1 text-xs font-medium rounded-full ${
-                    user.role === 'ADMIN' ? 'bg-red-100 text-red-800' :
+                    isAdmin(user.role) ? 'bg-red-100 text-red-800' :
                     user.role === 'AGENT' ? 'bg-blue-100 text-blue-800' :
                     'bg-green-100 text-green-800'
                   }`}>
-                    {user.role === 'ADMIN' ? 'Administrador' : 
-                     user.role === 'AGENT' ? 'Agente' : 'Cliente'}
+                    {roleLabels[user.role] || 'Cliente'}
                   </span>
                   <div className="mt-6 pt-6 border-t w-full">
                     <div className="space-y-3 text-sm">

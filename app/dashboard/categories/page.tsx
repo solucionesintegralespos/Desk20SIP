@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import CategoriesTable from '@/components/categories/CategoriesTable'
 import CreateCategoryButton from '@/components/categories/CreateCategoryButton'
+import { isAdmin } from '@/lib/roles'
 
 export const metadata: Metadata = {
   title: 'Categorías | SIP SOPORTE',
@@ -25,7 +26,7 @@ export default async function CategoriesPage() {
   }
 
   // Validar que CUSTOMER no pueda acceder a esta página
-  if (user.role !== 'ADMIN') {
+  if (!isAdmin(user.role)) {
     redirect('/dashboard')
   }
 

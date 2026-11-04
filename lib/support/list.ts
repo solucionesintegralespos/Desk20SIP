@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { dailyRange } from '@/lib/daily-filter'
+import { isAdmin } from '@/lib/roles'
 type ListRecord={id:string;kind:string;revision:number;payload:Prisma.JsonValue}
 // Keep binary evidence and signatures out of list responses, including the DB read.
 // The detail endpoint reads the complete immutable document when it is opened.
@@ -27,7 +28,7 @@ export function serviceList(kinds:string[],user:{id:string;role:string}, range =
           ELSE COALESCE(NULLIF("payload"->>'completedAt', ''), NULLIF("payload"->>'createdAt', ''))::timestamptz END) < ${range.lt}
       ))
       -- Agents see the orders they created or took part in (payload techIds).
-      AND (${user.role==='ADMIN'} OR "kind"='templates' OR
+      AND (${isAdmin(user.role)} OR "kind"='templates' OR
         CASE WHEN "kind"='orders' THEN "creatorId"=${user.id}
           OR COALESCE("payload"->'techIds','[]'::jsonb) @> jsonb_build_array(${user.id}::text)
         ELSE "techId"=${user.id} END)

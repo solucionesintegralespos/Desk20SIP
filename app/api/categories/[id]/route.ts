@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { isAdmin } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +19,7 @@ export async function GET(
     }
 
     const actor = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-    if (actor?.role !== 'ADMIN') return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 })
+    if (!isAdmin(actor?.role)) return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 })
     const category = await prisma.category.findUnique({
       where: { id: params.id }
     })
@@ -59,7 +60,7 @@ export async function PUT(
     })
 
     // Solo AGENT y ADMIN pueden actualizar categorías
-    if (user?.role !== 'ADMIN') {
+    if (!isAdmin(user?.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }
@@ -113,7 +114,7 @@ export async function DELETE(
     })
 
     // Solo AGENT y ADMIN pueden eliminar categorías
-    if (user?.role !== 'ADMIN') {
+    if (!isAdmin(user?.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }

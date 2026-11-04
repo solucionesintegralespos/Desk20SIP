@@ -19,8 +19,12 @@ import {
   BarChart2,
   ClipboardCheck,
   CalendarDays,
-  FileSignature
+  FileSignature,
+  FileText,
+  Receipt,
+  Package
 } from 'lucide-react'
+import { ADMIN_ROLES, STAFF_ROLES } from '@/lib/roles'
 import { useOrg } from '@/components/OrgProvider'
 import { ThemeToggle } from '@/components/ThemeProvider'
 import { TICKETS_PATH, useTicketsListHref } from '@/lib/tickets-list-query'
@@ -47,18 +51,25 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
 
 
   // Definir navegación según el rol
+  // Contabilidad (ACCOUNTING) sees everything an administrator sees plus the accounting modules.
+  const everyone: string[] = ['CUSTOMER', ...STAFF_ROLES]
+  const staff: string[] = STAFF_ROLES
+  const admins: string[] = ADMIN_ROLES
   const allNavigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: Home, roles: ['CUSTOMER', 'AGENT', 'ADMIN'] },
-    { name: 'Tickets', href: '/dashboard/tickets', icon: MessageSquare, roles: ['CUSTOMER', 'AGENT', 'ADMIN'] },
-    { name: 'Programación', href: '/dashboard/schedule', icon: CalendarDays, roles: ['AGENT', 'ADMIN'] },
-    { name: 'Órdenes de servicio', href: '/dashboard/orders', icon: FileSignature, roles: ['AGENT', 'ADMIN'] },
-    { name: 'Checklists', href: '/dashboard/checklists', icon: ClipboardCheck, roles: ['AGENT', 'ADMIN'] },
-    { name: 'Reportes', href: '/dashboard/reports', icon: BarChart2, roles: ['ADMIN'] },
-    { name: 'Incentivos', href: '/dashboard/incentives', icon: BarChart2, roles: ['ADMIN'] },
-    { name: 'Categorías', href: '/dashboard/categories', icon: Tag, roles: ['ADMIN'] },
-    { name: 'Clientes', href: '/dashboard/customers', icon: Users, roles: ['AGENT', 'ADMIN'] },
-    { name: 'Usuarios', href: '/dashboard/users', icon: Users, roles: ['ADMIN'] },
-    { name: 'Configuración', href: '/dashboard/settings', icon: Settings, roles: ['ADMIN'] },
+    { name: 'Dashboard', href: '/dashboard', icon: Home, roles: everyone },
+    { name: 'Tickets', href: '/dashboard/tickets', icon: MessageSquare, roles: everyone },
+    { name: 'Programación', href: '/dashboard/schedule', icon: CalendarDays, roles: staff },
+    { name: 'Órdenes de servicio', href: '/dashboard/orders', icon: FileSignature, roles: staff },
+    { name: 'Checklists', href: '/dashboard/checklists', icon: ClipboardCheck, roles: staff },
+    { name: 'Cotizaciones', href: '/dashboard/quotes', icon: FileText, roles: admins },
+    { name: 'Cuentas de cobro', href: '/dashboard/billing', icon: Receipt, roles: admins },
+    { name: 'Catálogo', href: '/dashboard/catalog', icon: Package, roles: admins },
+    { name: 'Reportes', href: '/dashboard/reports', icon: BarChart2, roles: admins },
+    { name: 'Incentivos', href: '/dashboard/incentives', icon: BarChart2, roles: admins },
+    { name: 'Categorías', href: '/dashboard/categories', icon: Tag, roles: admins },
+    { name: 'Clientes', href: '/dashboard/customers', icon: Users, roles: staff },
+    { name: 'Usuarios', href: '/dashboard/users', icon: Users, roles: admins },
+    { name: 'Configuración', href: '/dashboard/settings', icon: Settings, roles: admins },
   ]
 
   // Filtrar navegación por rol

@@ -2,6 +2,7 @@ import { getDashboardSession, getDashboardUser } from "@/lib/dashboard-data"
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import CreateUserForm from '@/components/users/CreateUserForm'
+import { isAdmin } from '@/lib/roles'
 
 export default async function NewUserPage() {
   const session = await getDashboardSession()
@@ -18,7 +19,7 @@ export default async function NewUserPage() {
   }
 
   // Validar que solo ADMIN pueda acceder a esta página
-  if (user.role !== 'ADMIN') {
+  if (!isAdmin(user.role)) {
     redirect('/dashboard')
   }
 

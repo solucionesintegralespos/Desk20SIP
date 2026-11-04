@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 import { validateUserPerformance } from '@/lib/user-performance'
+import { isAdmin, isManagedRole } from '@/lib/roles'
 
 export { POST } from '../route'
 
@@ -28,7 +29,7 @@ export async function PATCH(
     })
 
     // Solo ADMIN puede editar usuarios
-    if (currentUser?.role !== 'ADMIN') {
+    if (!isAdmin(currentUser?.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }
@@ -53,7 +54,7 @@ export async function PATCH(
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 })
     const { name, role, phone, location, password } = data
 
-    if (role && !['ADMIN', 'AGENT'].includes(role)) return NextResponse.json({ error: 'Los clientes se gestionan en Clientes' }, { status: 400 })
+    if (role && !isManagedRole(role)) return NextResponse.json({ error: 'Los clientes se gestionan en Clientes' }, { status: 400 })
 
     const updateData: any = {
       avatar: data.avatar === '' ? null : data.avatar,
@@ -120,7 +121,7 @@ export async function DELETE(
     })
 
     // Solo ADMIN puede eliminar usuarios
-    if (currentUser?.role !== 'ADMIN') {
+    if (!isAdmin(currentUser?.role)) {
       return NextResponse.json(
         { error: 'Acceso denegado' },
         { status: 403 }
