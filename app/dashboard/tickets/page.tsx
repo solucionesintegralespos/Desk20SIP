@@ -50,13 +50,16 @@ export default async function TicketsPage({
   const perPage = 20
   const skip = (page - 1) * perPage
 
-  const whereClause: any = searchParams.mine === '1' ? personalDashboardWhere(user) : {}
   const sort = parseTicketSort(searchParams.sort, searchParams.dir)
 
-  // Exact ticket number ("123" or "#123"). A specific ticket is being looked up,
-  // so the creation-date range does not apply.
+  // Exact ticket number ("123" or "#123"). It is exclusive: every other filter,
+  // including the date range and the personal list, is ignored so the ticket always
+  // shows up. Only the role restriction below still applies.
   const numberText = (searchParams.number || '').trim().replace(/^#/, '')
   const ticketNumber = /^[0-9]{1,9}$/.test(numberText) ? parseInt(numberText, 10) : undefined
+  const filters: SearchParams = ticketNumber === undefined ? searchParams : { number: numberText }
+
+  const whereClause: any = filters.mine === '1' ? personalDashboardWhere(user) : {}
   if (ticketNumber !== undefined) whereClause.number = ticketNumber
   
   // Si es CUSTOMER, solo puede ver sus propios tickets
@@ -64,44 +67,44 @@ export default async function TicketsPage({
     whereClause.customerId = user.id
   }
   
-  if (searchParams.status) {
-    whereClause.status = ['SOLVED', 'CLOSED'].includes(searchParams.status) ? { in: ['SOLVED', 'CLOSED'] } : searchParams.status
+  if (filters.status) {
+    whereClause.status = ['SOLVED', 'CLOSED'].includes(filters.status) ? { in: ['SOLVED', 'CLOSED'] } : filters.status
   }
   
-  if (searchParams.priority) {
-    whereClause.priority = searchParams.priority
+  if (filters.priority) {
+    whereClause.priority = filters.priority
   }
   
-  if (searchParams.assignee) {
-    if (searchParams.assignee === 'unassigned') {
+  if (filters.assignee) {
+    if (filters.assignee === 'unassigned') {
       whereClause.assignments = { none: {} }
     } else {
-      whereClause.assignments = { some: { userId: searchParams.assignee } }
+      whereClause.assignments = { some: { userId: filters.assignee } }
     }
   }
 
-  if (searchParams.search) {
+  if (filters.search) {
     whereClause.subject = {
-      contains: searchParams.search,
+      contains: filters.search,
       mode: 'insensitive'
     }
   }
 
-  if (searchParams.category) {
-    whereClause.categoryId = searchParams.category === 'uncategorized' ? null : searchParams.category
+  if (filters.category) {
+    whereClause.categoryId = filters.category === 'uncategorized' ? null : filters.category
   }
 
   // Customers only ever see their own tickets, so the client filter is for staff.
-  if (searchParams.customer && user.role !== 'CUSTOMER') {
-    whereClause.customerId = searchParams.customer
+  if (filters.customer && user.role !== 'CUSTOMER') {
+    whereClause.customerId = filters.customer
   }
 
   // Creation date range in Colombia (from/to, inclusive). Without dates the list shows today;
   // range=all removes the date filter. `date` is the former single-day parameter.
-  const allDates = searchParams.range === 'all'
-  const range = dailyRange(searchParams.from || searchParams.date, searchParams.to || searchParams.date)
+  const allDates = filters.range === 'all'
+  const range = dailyRange(filters.from || filters.date, filters.to || filters.date)
   if (!allDates && ticketNumber === undefined) whereClause.createdAt = { gte: range.gte, lt: range.lt }
-  const dateFiltered = allDates || !!(searchParams.from || searchParams.to || searchParams.date)
+  const dateFiltered = allDates || !!(filters.from || filters.to || filters.date)
 
   const [tickets, totalCount, agents, categories, customers] = await Promise.all([
     prisma.ticket.findMany({
@@ -178,13 +181,13 @@ export default async function TicketsPage({
           </div>
 
           <TicketFilters 
-            currentStatus={searchParams.status === 'SOLVED' ? 'CLOSED' : searchParams.status}
-            currentPriority={searchParams.priority}
-            currentAssignee={searchParams.assignee}
-            currentSearch={searchParams.search}
+            currentStatus={filters.status === 'SOLVED' ? 'CLOSED' : filters.status}
+            currentPriority={filters.priority}
+            currentAssignee={filters.assignee}
+            currentSearch={filters.search}
             currentNumber={ticketNumber !== undefined ? String(ticketNumber) : undefined}
-            currentCategory={searchParams.category}
-            currentCustomer={user.role === 'CUSTOMER' ? undefined : searchParams.customer}
+            currentCategory={filters.category}
+            currentCustomer={user.role === 'CUSTOMER' ? undefined : filters.customer}
             customers={customers}
             currentFrom={allDates ? '' : range.dateFrom}
             currentTo={allDates ? '' : range.dateTo}

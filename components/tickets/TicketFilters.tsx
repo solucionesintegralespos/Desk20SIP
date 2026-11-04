@@ -56,16 +56,30 @@ export default function TicketFilters({
   useEffect(() => { setSearchTerm(currentSearch || '') }, [currentSearch])
   useEffect(() => { setNumberTerm(currentNumber || '') }, [currentNumber])
 
+  const push = (params: URLSearchParams) => {
+    const next = params.toString()
+    router.push(`${pathname}${next ? `?${next}` : ''}`)
+  }
+
   // Every change starts from the current URL and returns to the first page.
+  // Using any filter drops the exclusive ticket number.
   const navigate = (change: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString())
     params.delete('page')
+    params.delete('number')
     if (searchTerm) params.set('search', searchTerm); else params.delete('search')
-    const number = numberTerm.trim().replace(/^#/, '')
-    if (number) params.set('number', number); else params.delete('number')
     change(params)
-    const next = params.toString()
-    router.push(`${pathname}${next ? `?${next}` : ''}`)
+    push(params)
+  }
+
+  // The ticket number is exclusive: it replaces every other filter (and the personal
+  // list) so the ticket always appears. Only the sort order is kept.
+  const lookupNumber = (number: string) => {
+    setSearchTerm('')
+    const params = new URLSearchParams()
+    params.set('number', number)
+    for (const key of ['sort', 'dir']) { const value = searchParams.get(key); if (value) params.set(key, value) }
+    push(params)
   }
 
   const updateFilter = (key: string, value: string) => navigate(params => {
@@ -82,10 +96,10 @@ export default function TicketFilters({
   })
   const allDates = searchParams.get('range') === 'all'
 
-  // The text and number boxes are applied together by `navigate`.
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    navigate(() => {})
+    const number = numberTerm.trim().replace(/^#/, '')
+    if (number) lookupNumber(number); else navigate(() => {})
   }
 
   // Sorting is not a filter: it survives clearing.
@@ -95,8 +109,7 @@ export default function TicketFilters({
     const params = new URLSearchParams()
     if (searchParams.get('mine') === '1') params.set('mine', '1')
     for (const key of ['sort', 'dir']) { const value = searchParams.get(key); if (value) params.set(key, value) }
-    const next = params.toString()
-    router.push(`${pathname}${next ? `?${next}` : ''}`)
+    push(params)
   }
 
   const hasFilters = currentStatus || currentPriority || currentAssignee || currentSearch || currentNumber || currentCategory || currentCustomer || dateFiltered
@@ -111,7 +124,7 @@ export default function TicketFilters({
             aria-label="Buscar por título"
             placeholder="Buscar por título del ticket..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => { setSearchTerm(e.target.value); if (e.target.value) setNumberTerm('') }}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
@@ -125,7 +138,8 @@ export default function TicketFilters({
             title="Número exacto del ticket, por ejemplo 123 o #123"
             placeholder="N.º de ticket"
             value={numberTerm}
-            onChange={(e) => setNumberTerm(e.target.value)}
+            onChange={(e) => { setNumberTerm(e.target.value); if (e.target.value) setSearchTerm('') }}
+            onBlur={() => { const number = numberTerm.trim().replace(/^#/, ''); if (number && number !== (currentNumber || '')) lookupNumber(number) }}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
