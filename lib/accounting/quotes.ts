@@ -42,33 +42,64 @@ export const freeCustomerSnapshot = (name: string, email = '') => ({ id: null as
  * Creates a quote with the customer, company, products and tax frozen as they are now.
  * Prices are taken from the input (editable per quote), never from the catalog.
  */
-export async function createQuote(input: QuoteInput, actorId: string) {
-  const company = await loadCompanyProfile()
+/** Validates the input against the catalog and customer directory and computes totals and snapshots (shared by create and update). */
+async function prepareQuote(tx: Prisma.TransactionClient, input: QuoteInput) {
   if (!input.customerId && !input.customerName.trim()) throw new ServiceError('Selecciona el cliente o escribe su nombre')
-  return prisma.$transaction(async tx => {
-    const customer = input.customerId ? await tx.user.findFirst({ where: { id: input.customerId, role: 'CUSTOMER' }, select: { id: true, name: true, email: true, businessName: true, taxId: true, phone: true, address: true, location: true } }) : null
-    if (input.customerId && !customer) throw new ServiceError('Selecciona un cliente válido')
-    const issuer = await tx.user.findUnique({ where: { id: actorId }, select: { id: true, name: true, email: true, jobTitle: true, phone: true } })
-    const tax = input.taxId ? await tx.tax.findUnique({ where: { id: input.taxId } }) : null
-    if (input.taxId && (!tax || !tax.active)) throw new ServiceError('Selecciona un impuesto activo')
-    const productIds = Array.from(new Set(input.items.map(item => item.productId).filter((id): id is string => !!id)))
-    const products = productIds.length ? await tx.product.findMany({ where: { id: { in: productIds } }, select: { id: true, active: true } }) : []
-    if (products.length !== productIds.length) throw new ServiceError('Uno de los productos no existe')
-    if (products.some(product => !product.active)) throw new ServiceError('Los productos inactivos no están disponibles para nuevas cotizaciones')
-    const totals = quoteTotals(input.items.map(item => ({ quantity: item.quantity, unitPriceCents: toCents(item.unitPrice) })), tax ? decimal(tax.rate) : null)
-    const companySnapshot: CompanySnapshot = { ...docCompany(company), logoUrl: company.logoUrl, issuer: issuer ? { id: issuer.id, name: issuer.name || issuer.email || 'Usuario', jobTitle: issuer.jobTitle, email: issuer.email, phone: issuer.phone } : null }
-    const quote = await tx.quote.create({ data: {
-      customerId: customer?.id || null, customerSnapshot: (customer ? customerSnapshot(customer) : freeCustomerSnapshot(input.customerName, input.customerEmail)) as unknown as Prisma.InputJsonValue,
-      companySnapshot: companySnapshot as unknown as Prisma.InputJsonValue,
+  const customer = input.customerId ? await tx.user.findFirst({ where: { id: input.customerId, role: 'CUSTOMER' }, select: { id: true, name: true, email: true, businessName: true, taxId: true, phone: true, address: true, location: true } }) : null
+  if (input.customerId && !customer) throw new ServiceError('Selecciona un cliente válido')
+  const tax = input.taxId ? await tx.tax.findUnique({ where: { id: input.taxId } }) : null
+  if (input.taxId && (!tax || !tax.active)) throw new ServiceError('Selecciona un impuesto activo')
+  const productIds = Array.from(new Set(input.items.map(item => item.productId).filter((id): id is string => !!id)))
+  const products = productIds.length ? await tx.product.findMany({ where: { id: { in: productIds } }, select: { id: true, active: true } }) : []
+  if (products.length !== productIds.length) throw new ServiceError('Uno de los productos no existe')
+  if (products.some(product => !product.active)) throw new ServiceError('Los productos inactivos no están disponibles para nuevas cotizaciones')
+  const totals = quoteTotals(input.items.map(item => ({ quantity: item.quantity, unitPriceCents: toCents(item.unitPrice) })), tax ? decimal(tax.rate) : null)
+  const items = input.items.map((item, index) => ({
+    productId: item.productId || null, position: index + 1, name: item.name, description: item.description || null,
+    quantity: new Prisma.Decimal(Math.round(item.quantity * 100)).div(100), unitPrice: fromCentsDecimal(toCents(item.unitPrice)), total: fromCentsDecimal(totals.lines[index]),
+  }))
+  const customerData = (customer ? customerSnapshot(customer) : freeCustomerSnapshot(input.customerName, input.customerEmail)) as unknown as Prisma.InputJsonValue
+  return {
+    items,
+    data: {
+      customerId: customer?.id || null, customerSnapshot: customerData,
       taxId: tax?.id || null, taxName: tax?.name || null, taxRate: tax ? tax.rate : null,
       subtotal: fromCentsDecimal(totals.subtotalCents), taxAmount: fromCentsDecimal(totals.taxCents), total: fromCentsDecimal(totals.totalCents),
-      title: input.title || 'Cotización', notes: input.notes || null, conditions: input.conditions ?? company.quoteConditions, createdById: actorId,
-      items: { create: input.items.map((item, index) => ({
-        productId: item.productId || null, position: index + 1, name: item.name, description: item.description || null,
-        quantity: new Prisma.Decimal(Math.round(item.quantity * 100)).div(100), unitPrice: fromCentsDecimal(toCents(item.unitPrice)), total: fromCentsDecimal(totals.lines[index]),
-      })) },
+      title: input.title || 'Cotización', notes: input.notes || null,
+    },
+  }
+}
+
+export async function createQuote(input: QuoteInput, actorId: string) {
+  const company = await loadCompanyProfile()
+  return prisma.$transaction(async tx => {
+    const { data, items } = await prepareQuote(tx, input)
+    const issuer = await tx.user.findUnique({ where: { id: actorId }, select: { id: true, name: true, email: true, jobTitle: true, phone: true } })
+    const companySnapshot: CompanySnapshot = { ...docCompany(company), logoUrl: company.logoUrl, issuer: issuer ? { id: issuer.id, name: issuer.name || issuer.email || 'Usuario', jobTitle: issuer.jobTitle, email: issuer.email, phone: issuer.phone } : null }
+    const quote = await tx.quote.create({ data: {
+      ...data, companySnapshot: companySnapshot as unknown as Prisma.InputJsonValue, conditions: input.conditions ?? company.quoteConditions, createdById: actorId,
+      items: { create: items },
     }, include: { items: { orderBy: { position: 'asc' } } } })
     await audit(tx, actorId, quote.id, 'quotes:created')
+    return quote
+  })
+}
+
+/**
+ * Replaces the content of an existing quote (customer, products, prices, tax, texts). The
+ * number, the creation date and the original signer are kept; the lines are rewritten.
+ */
+export async function updateQuote(id: string, input: QuoteInput, actorId: string) {
+  return prisma.$transaction(async tx => {
+    const existing = await tx.quote.findUnique({ where: { id }, select: { id: true, conditions: true } })
+    if (!existing) throw new ServiceError('Cotización no encontrada', 404)
+    const { data, items } = await prepareQuote(tx, input)
+    await tx.quoteItem.deleteMany({ where: { quoteId: id } })
+    const quote = await tx.quote.update({ where: { id }, data: {
+      ...data, conditions: input.conditions ?? existing.conditions,
+      items: { create: items },
+    }, include: { items: { orderBy: { position: 'asc' } } } })
+    await audit(tx, actorId, quote.id, 'quotes:updated')
     return quote
   })
 }

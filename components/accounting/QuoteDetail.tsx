@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Download, Mail, Loader2 } from 'lucide-react'
+import { ArrowLeft, Download, Mail, Loader2, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api } from './api'
 import { PdfPreview } from './PdfPreview'
@@ -54,6 +54,7 @@ export default function QuoteDetail({ id }: { id: string }) {
         {issuer && <p className="text-xs text-gray-500 mt-1">Firma: {[issuer.name, issuer.jobTitle, issuer.email, issuer.phone].filter(Boolean).join(' · ')}</p>}
       </div>
       <div className="flex flex-wrap gap-2">
+        <Link href={`/dashboard/quotes/${encodeURIComponent(id)}/edit`} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"><Pencil className="h-4 w-4" /> Editar</Link>
         <a href={`/api/quotes/${encodeURIComponent(id)}/pdf`} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"><Download className="h-4 w-4" /> Descargar PDF</a>
         <button type="button" onClick={() => setConfirming(true)} disabled={!canEmail || sending} title={canEmail ? `Enviar a ${customer.email}` : noEmailReason}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">

@@ -24,7 +24,7 @@ import {
   Receipt,
   Package
 } from 'lucide-react'
-import { ADMIN_ROLES, STAFF_ROLES } from '@/lib/roles'
+import { ACCOUNTING_ROLES, ADMIN_ROLES, STAFF_ROLES } from '@/lib/roles'
 import { useOrg } from '@/components/OrgProvider'
 import { ThemeToggle } from '@/components/ThemeProvider'
 import { TICKETS_PATH, useTicketsListHref } from '@/lib/tickets-list-query'
@@ -51,19 +51,20 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
 
 
   // Definir navegación según el rol
-  // Contabilidad (ACCOUNTING) sees everything an administrator sees plus the accounting modules.
+  // Contabilidad (ACCOUNTING) sees what an agent sees plus the accounting modules; only ADMIN sees administration.
   const everyone: string[] = ['CUSTOMER', ...STAFF_ROLES]
   const staff: string[] = STAFF_ROLES
   const admins: string[] = ADMIN_ROLES
+  const accounting: string[] = ACCOUNTING_ROLES
   const allNavigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home, roles: everyone },
     { name: 'Tickets', href: '/dashboard/tickets', icon: MessageSquare, roles: everyone },
     { name: 'Programación', href: '/dashboard/schedule', icon: CalendarDays, roles: staff },
     { name: 'Órdenes de servicio', href: '/dashboard/orders', icon: FileSignature, roles: staff },
     { name: 'Checklists', href: '/dashboard/checklists', icon: ClipboardCheck, roles: staff },
-    { name: 'Cotizaciones', href: '/dashboard/quotes', icon: FileText, roles: admins },
-    { name: 'Cuentas de cobro', href: '/dashboard/billing', icon: Receipt, roles: admins },
-    { name: 'Catálogo', href: '/dashboard/catalog', icon: Package, roles: admins },
+    { name: 'Cotizaciones', href: '/dashboard/quotes', icon: FileText, roles: accounting },
+    { name: 'Cuentas de cobro', href: '/dashboard/billing', icon: Receipt, roles: accounting },
+    { name: 'Catálogo', href: '/dashboard/catalog', icon: Package, roles: accounting },
     { name: 'Reportes', href: '/dashboard/reports', icon: BarChart2, roles: admins },
     { name: 'Incentivos', href: '/dashboard/incentives', icon: BarChart2, roles: admins },
     { name: 'Categorías', href: '/dashboard/categories', icon: Tag, roles: admins },

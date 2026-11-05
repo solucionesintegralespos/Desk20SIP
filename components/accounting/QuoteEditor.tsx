@@ -12,6 +12,7 @@ import { MoneyInput } from './MoneyInput'
 import { quotePdf, type QuoteDocument } from '@/lib/accounting/quote-pdf'
 import { formatMoney, formatNumber, quoteTotals, toCents } from '@/lib/accounting/format'
 import { clientId } from '@/lib/support/client-id'
+import type { SerializedQuote } from '@/lib/accounting/quotes'
 
 type Customer = Pick<CustomerOption, 'id' | 'name' | 'businessName' | 'taxId' | 'email' | 'phone' | 'address'> & { location?: string | null }
 type Product = { id: string; name: string; description: string | null; price: number; active: boolean }
@@ -21,8 +22,11 @@ type Line = { key: string; productId: string | null; name: string; description: 
 const inputClass = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500'
 const newLine = (): Line => ({ key: clientId(), productId: null, name: '', description: '', quantity: '1', unitPriceCents: 0 })
 
-export default function QuoteEditor() {
+/** Creates a quote, or edits an existing one when `quoteId` is given (same number, new content). */
+export default function QuoteEditor({ quoteId }: { quoteId?: string } = {}) {
   const router = useRouter()
+  const editing = !!quoteId
+  const [existing, setExisting] = useState<SerializedQuote | null>(null)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [taxes, setTaxes] = useState<Tax[]>([])
@@ -46,9 +50,22 @@ export default function QuoteEditor() {
       api<Product[]>('/api/products?active=1'),
       api<Tax[]>('/api/taxes?active=1'),
       api<CompanyBranding>('/api/documents/branding'),
-    ]).then(([customerList, productList, taxList, brand]) => {
+      quoteId ? api<SerializedQuote>(`/api/quotes/${encodeURIComponent(quoteId)}`) : Promise.resolve(null),
+    ]).then(([customerList, productList, taxList, brand, quote]) => {
       if (cancelled) return
       setCustomers(customerList); setProducts(productList.filter(p => p.active)); setTaxes(taxList.filter(t => t.active)); setBranding(brand)
+      if (quote) {
+        // Edit mode: prefill everything from the stored quote (lines keep their product link and edited prices).
+        setExisting(quote)
+        const registered = quote.registered && quote.customerId && customerList.some(c => c.id === quote.customerId)
+        const option = registered ? customerList.find(c => c.id === quote.customerId) : null
+        setCustomerPick(option ? { id: option.id, query: option.businessName || option.name || option.email || 'Cliente' } : { id: '', query: quote.customer.name })
+        if (!registered) setFreeEmail(quote.customer.email || '')
+        setTaxId(quote.taxId && taxList.some(t => t.id === quote.taxId && t.active) ? quote.taxId : '')
+        setLines(quote.items.map(item => ({ key: clientId(), productId: item.productId, name: item.name, description: item.description || '', quantity: String(item.quantity), unitPriceCents: item.unitPriceCents })))
+        setNotes(quote.notes || ''); setConditions(quote.conditions || '')
+        return
+      }
       setConditions(brand.company.quoteConditions || '')
       // IVA 19 % is preselected; it can be removed or replaced from the select.
       const preset = taxList.find(t => t.active && t.isDefault) || taxList.find(t => t.active && /iva/i.test(t.name) && Math.round(t.rate) === 19)
@@ -56,7 +73,7 @@ export default function QuoteEditor() {
     }).catch(e => { if (!cancelled) setLoadError((e as Error).message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [])
+  }, [quoteId])
 
   const customerId = customerPick.id
   const customer = customers.find(c => c.id === customerId) || null
@@ -84,11 +101,11 @@ export default function QuoteEditor() {
 
   // The preview renders the same document the server will generate after saving.
   const document: QuoteDocument | null = branding ? {
-    company: branding.company, logo: branding.logo || undefined, number: 'Borrador', date: new Date().toISOString(),
+    company: branding.company, logo: branding.logo || undefined, number: existing?.numberLabel || 'Borrador', date: existing?.createdAt || new Date().toISOString(),
     customer: customer ? { name: customer.name || customer.email || 'Cliente', businessName: customer.businessName, taxId: customer.taxId, email: customer.email, phone: customer.phone, address: customer.address, city: customer.location } : { name: freeCustomerName || 'Cliente', email: freeEmail.trim() || null },
     items: parsedLines.map((l, index) => ({ name: l.name.trim() || 'Ítem sin descripción', description: l.description.trim() || null, quantity: Number.isFinite(l.qty) && l.qty > 0 ? l.qty : 0, unitPriceCents: l.unitPriceCents, totalCents: totals.lines[index] })),
     subtotalCents: totals.subtotalCents, taxName: tax?.name || null, taxRatePercent: tax ? tax.rate : null, taxCents: totals.taxCents, totalCents: totals.totalCents,
-    title: 'Cotización', notes, conditions, signer: branding.issuer,
+    title: 'Cotización', notes, conditions, signer: existing?.issuer || branding.issuer,
   } : null
   const previewKey = JSON.stringify({ customerId, freeCustomerName, freeEmail, taxId, lines, notes, conditions, logo: !!branding?.logo, signer: branding?.issuer })
   const freeEmailInvalid = !!freeCustomerName && !!freeEmail.trim() && !/^[^@ ]+@[^@ ]+[.][^@ ]+$/.test(freeEmail.trim())
@@ -101,12 +118,16 @@ export default function QuoteEditor() {
     if (freeEmailInvalid) { toast.error('Ingresa un correo válido para el cliente'); return }
     setSaving(true)
     try {
-      const created = await api<{ id: string; numberLabel: string }>('/api/quotes', { method: 'POST', json: {
+      const payload = {
         customerId: customerId || null, customerName: freeCustomerName, customerEmail: customerId ? '' : freeEmail.trim(), taxId: taxId || null, notes, conditions, title: 'Cotización',
         items: parsedLines.map(l => ({ productId: l.productId, name: l.name.trim(), description: l.description.trim(), quantity: l.qty, unitPrice: l.unitPriceCents / 100 })),
-      } })
-      toast.success(`Cotización ${created.numberLabel} guardada`)
-      router.push(`/dashboard/quotes/${created.id}`)
+      }
+      const saved = editing
+        ? await api<{ id: string; numberLabel: string }>(`/api/quotes/${encodeURIComponent(quoteId!)}`, { method: 'PUT', json: payload })
+        : await api<{ id: string; numberLabel: string }>('/api/quotes', { method: 'POST', json: payload })
+      toast.success(editing ? `Cotización ${saved.numberLabel} actualizada` : `Cotización ${saved.numberLabel} guardada`)
+      router.push(`/dashboard/quotes/${saved.id}`)
+      router.refresh()
     } catch (e) {
       toast.error((e as Error).message)
       setSaving(false)
@@ -119,13 +140,13 @@ export default function QuoteEditor() {
     <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
       <div>
         <Link href="/dashboard/quotes" className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-2"><ArrowLeft className="h-4 w-4 mr-1" /> Volver a cotizaciones</Link>
-        <h1 className="text-3xl font-bold text-gray-900">Nueva cotización</h1>
-        <p className="text-gray-600 mt-1">El documento se previsualiza a medida que lo construyes</p>
+        <h1 className="text-3xl font-bold text-gray-900">{editing ? `Editar cotización ${existing?.numberLabel || ''}` : 'Nueva cotización'}</h1>
+        <p className="text-gray-600 mt-1">{editing ? 'Los cambios reemplazan el contenido de la cotización; conserva su número y fecha' : 'El documento se previsualiza a medida que lo construyes'}</p>
       </div>
       <div className="flex gap-2">
-        <Link href="/dashboard/quotes" className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Cancelar</Link>
+        <Link href={editing ? `/dashboard/quotes/${quoteId}` : '/dashboard/quotes'} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Cancelar</Link>
         <button type="button" onClick={() => void save()} disabled={saving || loading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} {saving ? 'Guardando…' : 'Guardar cotización'}
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} {saving ? 'Guardando…' : editing ? 'Guardar cambios' : 'Guardar cotización'}
         </button>
       </div>
     </div>

@@ -62,12 +62,12 @@ assert.equal(format.nextPeriod('2026-12'), '2027-01');
 assert.equal(format.periodLabel('2026-11'), 'Noviembre de 2026');
 assert.ok(format.isPeriod('2026-02')); assert.ok(!format.isPeriod('2026-13')); assert.ok(!format.isPeriod('2026-1'));
 
-// Roles: Contabilidad has administrator access; agents and customers keep theirs.
-assert.ok(roles.isAdmin('ADMIN')); assert.ok(roles.isAdmin('ACCOUNTING')); assert.ok(!roles.isAdmin('AGENT')); assert.ok(!roles.isAdmin('CUSTOMER')); assert.ok(!roles.isAdmin(undefined));
+// Roles: Contabilidad is staff (agent access) plus the accounting modules; only ADMIN administers.
+assert.ok(roles.isAdmin('ADMIN')); assert.ok(!roles.isAdmin('ACCOUNTING')); assert.ok(!roles.isAdmin('AGENT')); assert.ok(!roles.isAdmin('CUSTOMER')); assert.ok(!roles.isAdmin(undefined));
 assert.ok(roles.isStaff('AGENT')); assert.ok(roles.isStaff('ACCOUNTING')); assert.ok(!roles.isStaff('CUSTOMER'));
 assert.ok(roles.canUseAccounting('ACCOUNTING')); assert.ok(roles.canUseAccounting('ADMIN')); assert.ok(!roles.canUseAccounting('AGENT'));
 assert.ok(roles.isManagedRole('ACCOUNTING')); assert.ok(!roles.isManagedRole('CUSTOMER')); assert.ok(!roles.isManagedRole('ROOT'));
-assert.deepEqual(roles.STAFF_ROLES, ['ADMIN', 'AGENT', 'ACCOUNTING']);
+assert.deepEqual(roles.STAFF_ROLES, ['ADMIN', 'AGENT', 'ACCOUNTING']); assert.deepEqual(roles.ADMIN_ROLES, ['ADMIN']); assert.deepEqual(roles.ACCOUNTING_ROLES, ['ADMIN', 'ACCOUNTING']);
 assert.equal(roles.roleLabels.ACCOUNTING, 'Contabilidad');
 
 console.log('PASS: billing number format, cents arithmetic, tax rounding, amounts in words, periods and role helpers');

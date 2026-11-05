@@ -11,7 +11,9 @@
 
 ## Rol Contabilidad
 
-`ACCOUNTING` tiene los mismos accesos que `ADMIN` (todas las comprobaciones pasan por `isAdmin` / `STAFF_ROLES` en `lib/roles.ts`) y, además, los módulos Cotizaciones, Cuentas de cobro y Catálogo. Los módulos contables están disponibles para administradores y contabilidad; los agentes no los ven.
+`ACCOUNTING` tiene los accesos de un agente (tickets, programación, órdenes, checklists, clientes) más los módulos Catálogo, Cotizaciones y Cuentas de cobro. No es administrador: Reportes, Incentivos, Categorías, Usuarios y Configuración siguen siendo exclusivos de `ADMIN`, que tiene acceso a todo, incluidos los módulos contables. Las comprobaciones pasan por `isAdmin`, `isStaff` y `canUseAccounting` en `lib/roles.ts`.
+
+Las cotizaciones emitidas pueden editarse (botón Editar en el detalle): se reemplazan cliente, líneas, precios, impuesto y textos, conservando número, fecha y firmante; queda registrado en la auditoría como `quotes:updated`.
 
 ## Numeración de cuentas de cobro
 

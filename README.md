@@ -2,7 +2,7 @@
 
 Sistema de gestión de tickets y soporte al cliente inspirado en Zendesk, construido con Next.js, PostgreSQL y Prisma.
 
-Contabilidad (administradores y el rol Contabilidad) agrupa Catálogo (productos con precio sugerido e
+Contabilidad (administradores y el rol Contabilidad, que tiene acceso de agente más estos módulos) agrupa Catálogo (productos con precio sugerido e
 impuestos, sin borrado físico), Cotizaciones (cliente, productos con precio editable por línea, impuesto
 global con IVA 19 % por defecto, vista previa en vivo con el mismo motor PDF, descarga y envío por correo)
 y Cuentas de cobro (ocasionales y recurrentes con plantillas mensuales y generación masiva seleccionable).

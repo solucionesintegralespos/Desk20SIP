@@ -207,6 +207,9 @@ tables.user.push(
     assert.equal((await templates.GET(json('/api/billing/templates', 'GET'))).status, 403);
   }
   for (const allowed of ['admin', 'accounting']) { sessionUserId = allowed; assert.equal((await products.GET(json('/api/products', 'GET'))).status, 200); }
+  // Contabilidad is not an administrator: pages and routes guarded by isAdmin stay closed to it.
+  const rolesLib = require('../lib/roles.ts');
+  assert.ok(!rolesLib.isAdmin('ACCOUNTING') && rolesLib.isStaff('ACCOUNTING') && rolesLib.canUseAccounting('ACCOUNTING'));
   sessionUserId = 'accounting';
 
   // Catalog: products are never deleted, duplicates are rejected, inactive ones are hidden from quotes.
@@ -246,6 +249,16 @@ tables.user.push(
   const stored = await (await quoteById.GET(json(`/api/quotes/${quote.id}`, 'GET'), ctx(quote.id))).json();
   assert.equal(stored.items[0].name, 'Impresora POS'); assert.equal(stored.items[0].unitPrice, 500000);
   const list = await (await quotes.GET(json('/api/quotes?q=COT-0001', 'GET'))).json(); assert.equal(list.total, 1);
+  // Editing replaces lines, totals and customer; number, date and signer are kept.
+  response = await quoteById.PUT(json(`/api/quotes/${quote.id}`, 'PUT', { customerId: 'customer-b', taxId: null, notes: 'Editada', items: [{ name: 'Nuevo ítem', quantity: 2, unitPrice: 1000 }] }), ctx(quote.id));
+  assert.equal(response.status, 200); const edited = await response.json();
+  assert.equal(edited.numberLabel, 'COT-0001'); assert.equal(edited.createdAt, quote.createdAt); assert.equal(edited.customer.id, 'customer-b');
+  assert.equal(edited.items.length, 1); assert.equal(edited.items[0].name, 'Nuevo ítem'); assert.equal(edited.subtotalCents, 200000); assert.equal(edited.taxCents, 0); assert.equal(edited.totalCents, 200000); assert.equal(edited.notes, 'Editada');
+  assert.equal(edited.issuer.name, 'Conta'); assert.equal(tables.quoteItem.filter(item => item.quoteId === quote.id).length, 1, 'old lines removed');
+  assert.equal((await quoteById.PUT(json('/api/quotes/nope', 'PUT', { customerId: 'customer-b', items: [{ name: 'x', quantity: 1, unitPrice: 1 }] }), ctx('nope'))).status, 404);
+  assert.equal((await quoteById.PUT(json(`/api/quotes/${quote.id}`, 'PUT', { customerId: 'customer-b', items: [] }), ctx(quote.id))).status, 400);
+  // Restore the original content so the later assertions keep their expectations.
+  await quoteById.PUT(json(`/api/quotes/${quote.id}`, 'PUT', { customerId: 'customer-a', taxId: iva19.id, items: [{ productId: printer.id, name: 'Impresora POS', description: 'Puerto de red 80mm', quantity: 1, unitPrice: 500000 }, { name: 'Instalación', quantity: 2, unitPrice: 30000.5 }] }), ctx(quote.id));
   // Signer: the user who created the quote (name, job title, email, phone) is frozen with the document.
   assert.deepEqual(stored.issuer, { id: 'accounting', name: 'Conta', jobTitle: 'Asistente contable', email: 'conta@test', phone: '317 000 0000' });
   assert.equal(stored.registered, true);
