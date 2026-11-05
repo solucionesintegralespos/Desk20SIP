@@ -78,15 +78,9 @@ export async function billingPdf(data: BillingDocument) {
   if (data.company.legalNote.trim()) write('(responsable del IVA - Régimen Simplificado)', { size: 9, align: 'center', color: GRAY, gap: 1 })
   y += 8
 
-  // Amount in words and concept.
-  const amountLine = `La suma de ${pdfText(data.amountInWords)} (${formatMoney(data.totalCents)}) por concepto de ${pdfText(data.concept)}.`
-  const lines = doc.splitTextToSize(amountLine, textWidth)
-  if (y + lines.length * 5 > height - 30) { doc.addPage(); y = 22 }
-  doc.setFontSize(10); doc.setTextColor(...BLACK)
-  let cursorY = y
-  for (const line of lines) { doc.setFont('helvetica', 'normal'); doc.text(line, MARGIN, cursorY, { align: 'justify', maxWidth: textWidth }); cursorY += 5 }
-  y = cursorY + 2
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text(`Total a pagar: ${formatMoney(data.totalCents)}`, MARGIN, y); y += 8
+  // Amount in words and concept: a plain wrapped paragraph (justifying with maxWidth re-wraps long concepts on top of each other).
+  write(`La suma de ${data.amountInWords} (${formatMoney(data.totalCents)}) por concepto de ${data.concept}.`, { size: 10, gap: 4 })
+  write(`Total a pagar: ${formatMoney(data.totalCents)}`, { size: 11, bold: true, gap: 6 })
 
   write(`Se firma en ${data.company.city ? pdfText(data.company.city) : 'Colombia'}, el ${bogotaDate(data.issuedAt)}.`, { size: 10, gap: 4 })
   if (data.company.paymentInfo.trim()) {
