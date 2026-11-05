@@ -87,7 +87,6 @@ export async function billingPdf(data: BillingDocument) {
     write('Páguese la cuenta', { size: 10, gap: 2 })
     write(data.company.paymentInfo, { size: 10, bold: true, gap: 2 })
   }
-  if (data.company.email) write(data.company.email, { size: 9, color: GRAY, gap: 2 })
   write(issuer, { size: 10, bold: true, gap: 2 })
   y += 10
 
