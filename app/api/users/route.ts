@@ -54,6 +54,7 @@ export async function GET(request: Request) {
         dailyEntryGoal: true, dailyClosureGoal: true,
         role: true,
         phone: true,
+        jobTitle: true,
         location: true,
         active: true,
         createdAt: true,
@@ -100,6 +101,9 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const { name, email, password, role, phone, location, avatar, dailyEntryGoal, dailyClosureGoal } = body
+    // Cargo: printed in the signature of quotes.
+    if (body.jobTitle !== undefined && body.jobTitle !== null && (typeof body.jobTitle !== 'string' || body.jobTitle.trim().length > 100)) return NextResponse.json({ error: 'El cargo no puede superar 100 caracteres' }, { status: 400 })
+    const jobTitle = typeof body.jobTitle === 'string' && body.jobTitle.trim() ? body.jobTitle.trim() : null
     const invalid = validateUserPerformance(body)
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 })
 
@@ -136,6 +140,7 @@ export async function POST(request: Request) {
         avatar: avatar || null, dailyEntryGoal, dailyClosureGoal,
         role: role || 'AGENT',
         phone,
+        jobTitle,
         location,
       },
       select: {
@@ -143,6 +148,7 @@ export async function POST(request: Request) {
         name: true,
         email: true,
         role: true,
+        jobTitle: true,
       }
     })
 

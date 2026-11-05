@@ -6,6 +6,7 @@ import { ArrowLeft, Receipt } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import { PdfPreview } from './PdfPreview'
+import { MoneyInput } from './MoneyInput'
 import { api, type CompanyBranding, type CustomerOption } from './api'
 import { billingPdf, type BillingDocument } from '@/lib/accounting/billing-pdf'
 import { amountInWords } from '@/lib/accounting/number-words'
@@ -14,15 +15,18 @@ import type { SerializedAccount } from '@/lib/accounting/billing'
 
 type RawCustomer = { id: string; name: string | null; email: string | null; phone: string | null; location: string | null; address: string | null; businessName: string | null; taxId: string | null }
 type NextNumber = { next: number; numberLabel: string; started: boolean }
+type Product = { id: string; name: string; description: string | null; price: number; active: boolean }
 const inputClass = 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500'
 
 export default function NewBillingAccount() {
   const router = useRouter()
   const [customers, setCustomers] = useState<CustomerOption[]>([])
+  const [products, setProducts] = useState<Product[]>([])
   const [branding, setBranding] = useState<CompanyBranding | null>(null)
   const [customerId, setCustomerId] = useState('')
+  const [productId, setProductId] = useState('')
   const [concept, setConcept] = useState('')
-  const [total, setTotal] = useState('')
+  const [totalCents, setTotalCents] = useState<number | null>(null)
   const [next, setNext] = useState<NextNumber | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -30,10 +34,11 @@ export default function NewBillingAccount() {
   const [attempted, setAttempted] = useState(false)
 
   useEffect(() => {
-    Promise.all([api<RawCustomer[]>('/api/customers'), api<CompanyBranding>('/api/documents/branding')])
-      .then(([list, brand]) => {
+    Promise.all([api<RawCustomer[]>('/api/customers'), api<CompanyBranding>('/api/documents/branding'), api<Product[]>('/api/products?active=1').catch(() => [] as Product[])])
+      .then(([list, brand, catalog]) => {
         setCustomers(list.map(c => ({ id: c.id, name: c.name || c.email || 'Cliente', businessName: c.businessName, taxId: c.taxId, email: c.email, phone: c.phone, address: c.address, city: c.location })))
         setBranding(brand)
+        setProducts(catalog)
       })
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false))
@@ -46,8 +51,15 @@ export default function NewBillingAccount() {
   }, [customerId])
 
   const customer = customers.find(c => c.id === customerId) || null
-  const totalCents = toCents(total)
-  const validTotal = total.trim() !== '' && Number.isFinite(Number(total)) && Number(total) >= 0
+  const validTotal = totalCents !== null && totalCents >= 0
+  // Choosing a catalog product prefills the concept and total; both stay editable.
+  function chooseProduct(id: string) {
+    setProductId(id)
+    const product = products.find(p => p.id === id)
+    if (!product) return
+    setConcept([product.name, product.description].filter(Boolean).join(' - ').slice(0, 500))
+    setTotalCents(toCents(product.price))
+  }
   const errors = {
     customer: !customerId ? 'Selecciona el cliente.' : '',
     concept: !concept.trim() ? 'Describe el producto o concepto.' : concept.length > 500 ? 'Máximo 500 caracteres.' : '',
@@ -58,13 +70,16 @@ export default function NewBillingAccount() {
   const document = useMemo((): BillingDocument | null => {
     if (!branding) return null
     const issuedAt = new Date()
-    const dueDays = branding.company.billingDueDays
+    // Cuentas de cobro are issued under the billing identity configured in Settings, not the company letterhead.
+    const billing = branding.billing
+    const dueDays = billing.dueDays
+    const cents = totalCents ?? 0
     return {
-      company: { name: branding.company.name, nit: branding.company.nit, phone: branding.company.phone, email: branding.company.email, website: branding.company.website, address: branding.company.address, city: branding.company.city, paymentInfo: branding.company.paymentInfo, legalNote: branding.company.legalNote },
-      logo: branding.logo || undefined, number: next?.numberLabel || '—', issuedAt: issuedAt.toISOString(),
+      company: { name: billing.name, nit: billing.taxId, phone: billing.phone, email: billing.email, city: billing.city, paymentInfo: billing.paymentInfo, legalNote: billing.legalNote },
+      number: next?.numberLabel || '—', issuedAt: issuedAt.toISOString(),
       dueAt: dueDays > 0 ? new Date(issuedAt.getTime() + dueDays * 86400000).toISOString() : null,
       customer: customer ? { name: customer.name, businessName: customer.businessName, taxId: customer.taxId, email: customer.email, phone: customer.phone, address: customer.address, city: customer.city } : { name: 'Cliente por seleccionar' },
-      concept: concept.trim() || 'Producto o concepto por definir', totalCents, amountInWords: amountInWords(totalCents), period: null, status: 'ISSUED',
+      concept: concept.trim() || 'Producto o concepto por definir', totalCents: cents, amountInWords: amountInWords(cents), period: null, status: 'ISSUED',
     }
     // The issue date changes every minute at most; the preview only needs the day.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,7 +91,7 @@ export default function NewBillingAccount() {
     if (invalid || submitting) return
     setSubmitting(true)
     try {
-      const account = await api<SerializedAccount>('/api/billing', { method: 'POST', json: { customerId, concept: concept.trim(), total: Number(total) } })
+      const account = await api<SerializedAccount>('/api/billing', { method: 'POST', json: { customerId, concept: concept.trim(), total: (totalCents ?? 0) / 100 } })
       toast.success(`Cuenta N.º ${account.numberLabel} generada`, { duration: 6000 })
       router.push(`/dashboard/billing?new=${account.id}`)
       router.refresh()
@@ -105,6 +120,12 @@ export default function NewBillingAccount() {
           </dl>}
         </div>
         <div>
+          <label className="mb-2 block text-sm font-medium text-gray-700">Producto del catálogo (opcional)</label>
+          <SearchSelect aria-label="Producto del catálogo" placeholder={products.length ? 'Elegir producto para llenar concepto y total…' : 'Sin productos activos en el catálogo'} emptyOption="Concepto manual" disabled={loading || submitting || !products.length} value={productId} onChange={chooseProduct}
+            options={products.map(p => ({ id: p.id, label: p.name, description: [p.description, formatMoney(toCents(p.price))].filter(Boolean).join(' · ') }))} />
+          <p className="mt-1 text-xs text-gray-500">Llena el concepto y el total con el precio sugerido; puedes editarlos.</p>
+        </div>
+        <div>
           <label htmlFor="billing-concept" className="mb-2 block text-sm font-medium text-gray-700">Producto o concepto <span className="text-red-500">*</span></label>
           <textarea id="billing-concept" rows={3} maxLength={500} value={concept} disabled={submitting} onChange={e => setConcept(e.target.value)} placeholder="Ej.: adaptador y cable de red" className={inputClass} aria-invalid={attempted && !!errors.concept} />
           <div className="mt-1 flex justify-between text-xs"><span className="text-red-700" role={attempted && errors.concept ? 'alert' : undefined}>{attempted && errors.concept}</span><span className="text-gray-400">{concept.length}/500</span></div>
@@ -112,7 +133,7 @@ export default function NewBillingAccount() {
         <div>
           <label htmlFor="billing-total" className="mb-2 block text-sm font-medium text-gray-700">Total (COP) <span className="text-red-500">*</span></label>
           <div className="flex items-center gap-3">
-            <input id="billing-total" type="number" inputMode="decimal" min={0} step={1} value={total} disabled={submitting} onChange={e => setTotal(e.target.value)} placeholder="176000" className={inputClass} aria-invalid={attempted && !!errors.total} />
+            <MoneyInput id="billing-total" valueCents={totalCents} onChange={setTotalCents} disabled={submitting} placeholder="176.000" invalid={attempted && !!errors.total} className="flex-1" />
             <span className="whitespace-nowrap text-sm font-semibold text-gray-900 tabular-nums">{validTotal ? formatMoney(totalCents) : '—'}</span>
           </div>
           {attempted && errors.total && <p role="alert" className="mt-1 text-xs font-medium text-red-700">{errors.total}</p>}
@@ -124,7 +145,7 @@ export default function NewBillingAccount() {
         </div>
       </form>
       <div>
-        {document ? <PdfPreview build={() => billingPdf(document)} deps={[document.number, document.customer, document.concept, document.totalCents, document.company.name]} title="Vista previa de la cuenta de cobro" />
+        {document ? <PdfPreview build={() => billingPdf(document)} deps={[document.number, document.customer, document.concept, document.totalCents, document.company]} title="Vista previa de la cuenta de cobro" />
           : <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-gray-200 bg-gray-100 text-sm text-gray-500">{loading ? 'Cargando datos de la empresa…' : 'No se pudo cargar la vista previa'}</div>}
       </div>
     </div>

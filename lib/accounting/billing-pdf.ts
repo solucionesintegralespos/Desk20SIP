@@ -1,13 +1,14 @@
-import type { RowInput } from 'jspdf-autotable'
 import { pdfText, bogotaDate, bogotaDateTime } from '@/lib/order-pdf'
 import { formatMoney, periodLabel } from './format'
-import { BLUE, NAVY, MUTED, LINE, INK, MARGIN, drawLetterhead, drawFooter, finalY, loadPdf, pdfBytes, type DocCompany, type PdfLogo } from './pdf-brand'
+import { MARGIN, loadPdf, pdfBytes, type PdfLogo } from './pdf-brand'
 
-// Cuenta de cobro. Reproduces the reference document (number, city and date, due date,
-// payer, payee, amount in words, concept, payment instructions, acceptance and legal note)
-// on the system letterhead. Everything comes from the account snapshot, never from live data.
+// Cuenta de cobro: minimalist black-and-white layout that follows the reference document
+// (issuer and phone, number, city and date, due date, payer, "Pago a" payee, amount in
+// words, concept, payment instructions, acceptance line and legal note). No logo, no
+// colours. Everything comes from the account snapshot, never from live data.
 export interface BillingDocument {
-  company: DocCompany & { paymentInfo: string; legalNote: string }
+  company: { name: string; nit: string; phone: string; email: string; website?: string; address?: string; city: string; paymentInfo: string; legalNote: string }
+  /** Kept for compatibility with stored snapshots; the minimalist layout does not print it. */
   logo?: PdfLogo
   /** Digits only: "01", "02", ... "10". */
   number: string
@@ -21,97 +22,107 @@ export interface BillingDocument {
   status: 'ISSUED' | 'VOID'
 }
 
+const BLACK: [number, number, number] = [0, 0, 0]
+const GRAY: [number, number, number] = [90, 90, 90]
+
 export async function billingPdf(data: BillingDocument) {
-  const { doc, autoTable } = await loadPdf()
+  const { doc } = await loadPdf()
   const width = doc.internal.pageSize.getWidth(), height = doc.internal.pageSize.getHeight()
-  const company = pdfText(data.company.name, 'SIP SOPORTE')
-  doc.setProperties({ title: `Cuenta de cobro ${pdfText(data.number)}`, subject: pdfText(data.concept), author: company, creator: company })
-  let y = drawLetterhead(doc, { company: data.company, logo: data.logo, title: 'Cuenta de cobro', number: `No. ${data.number}`, subtitle: data.status === 'VOID' ? 'ANULADA' : data.period ? periodLabel(data.period) : undefined })
+  const issuer = pdfText(data.company.name, 'SIP SOPORTE')
+  const customerName = pdfText(data.customer.businessName || data.customer.name, 'Cliente')
+  doc.setProperties({ title: `Cuenta de cobro ${pdfText(data.number)}`, subject: pdfText(data.concept), author: issuer, creator: issuer })
+  const textWidth = width - MARGIN * 2
+  let y = 22
 
+  const write = (text: string, options: { size?: number; bold?: boolean; align?: 'left' | 'center' | 'right'; color?: [number, number, number]; gap?: number; x?: number } = {}) => {
+    const lines = doc.splitTextToSize(pdfText(text), textWidth)
+    const lineHeight = (options.size || 10) * 0.5
+    if (y + lines.length * lineHeight > height - 30) { doc.addPage(); y = 22 }
+    doc.setFont('helvetica', options.bold ? 'bold' : 'normal'); doc.setFontSize(options.size || 10); doc.setTextColor(...(options.color || BLACK))
+    const x = options.x ?? (options.align === 'center' ? width / 2 : options.align === 'right' ? width - MARGIN : MARGIN)
+    doc.text(lines, x, y, { align: options.align || 'left' })
+    y += lines.length * lineHeight + (options.gap ?? 2)
+  }
+
+  // Issuer header: name and phone, separated by a thin rule.
+  write(issuer, { size: 13, bold: true, gap: 1 })
+  if (data.company.phone) write(`TEL ${data.company.phone}`, { size: 10, bold: true, gap: 1 })
+  doc.setDrawColor(...BLACK); doc.setLineWidth(0.4); doc.line(MARGIN, y + 1, width - MARGIN, y + 1)
+  y += 8
+
+  // Reference block, right-aligned like the reference document.
   const place = data.company.city ? `${pdfText(data.company.city)}, ${bogotaDate(data.issuedAt)}` : bogotaDate(data.issuedAt)
-  autoTable(doc, {
-    startY: y, margin: { left: MARGIN, right: MARGIN }, theme: 'plain',
-    styles: { font: 'helvetica', fontSize: 8, cellPadding: { top: 1, bottom: 1, left: 2, right: 2 }, textColor: MUTED },
-    body: [
-      ['CUENTA DE COBRO No.', 'CIUDAD Y FECHA', 'VENCIMIENTO', 'ESTADO'],
-      [data.number, place, data.dueAt ? bogotaDate(data.dueAt) : 'Contra entrega', data.status === 'VOID' ? 'Anulada' : 'Emitida'].map(content => ({ content: pdfText(content), styles: { fontSize: 10, fontStyle: 'bold' as const, textColor: NAVY } })),
-    ],
-  })
-  y = finalY(doc) + 6
-
-  const customerName = data.customer.businessName || data.customer.name
-  const party = (heading: string, rows: Array<[string, string]>, x: number, tableWidth: number) => autoTable(doc, {
-    startY: y, margin: { left: x, right: MARGIN }, tableWidth, theme: 'grid',
-    head: [[{ content: heading, colSpan: 2 }]], body: rows.filter(([, value]) => value).map(([label, value]): RowInput => [label, pdfText(value)]),
-    styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 1.8, overflow: 'linebreak', lineColor: LINE, lineWidth: 0.2, textColor: INK },
-    headStyles: { fillColor: BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 24, textColor: NAVY } },
-  })
-  const half = (width - MARGIN * 2 - 4) / 2
-  party('DEBE A (CLIENTE)', [
-    ['Nombre', customerName], ...(data.customer.businessName && data.customer.businessName !== data.customer.name ? [['Contacto', data.customer.name] as [string, string]] : []),
-    ['NIT / C.C.', data.customer.taxId || ''], ['Correo', data.customer.email || ''], ['Teléfono', data.customer.phone || ''],
-    ['Dirección', [data.customer.address, data.customer.city].filter(Boolean).join(', ')],
-  ], MARGIN, half)
-  const leftEnd = finalY(doc)
-  party('PAGO A (BENEFICIARIO)', [
-    ['Nombre', data.company.name], ['NIT / C.C.', data.company.nit], ['Teléfono', data.company.phone], ['Correo', data.company.email],
-    ['Dirección', [data.company.address, data.company.city].filter(Boolean).join(', ')],
-  ], MARGIN + half + 4, half)
-  y = Math.max(leftEnd, finalY(doc)) + 8
-
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...INK)
-  const amount = doc.splitTextToSize(`La suma de ${pdfText(data.amountInWords)} (${formatMoney(data.totalCents)}) por concepto de: ${pdfText(data.concept)}.`, width - MARGIN * 2)
-  doc.text(amount, MARGIN, y)
-  y += amount.length * 5 + 2
-
-  autoTable(doc, {
-    startY: y, margin: { left: MARGIN, right: MARGIN, top: 16, bottom: 20 }, theme: 'grid',
-    head: [['CONCEPTO', 'VALOR']], body: [[pdfText(data.concept), formatMoney(data.totalCents)]],
-    foot: [[{ content: 'TOTAL A PAGAR', styles: { halign: 'right' } }, formatMoney(data.totalCents)]],
-    styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.6, overflow: 'linebreak', lineColor: LINE, lineWidth: 0.2, textColor: INK },
-    headStyles: { fillColor: BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-    footStyles: { fillColor: [238, 243, 252], textColor: NAVY, fontStyle: 'bold', fontSize: 10, halign: 'right' },
-    columnStyles: { 1: { cellWidth: 40, halign: 'right' } },
-  })
-  y = finalY(doc) + 7
-
-  const paragraph = (text: string, bold = false) => {
-    const lines = doc.splitTextToSize(pdfText(text), width - MARGIN * 2)
-    if (y + lines.length * 4.6 > height - 22) { doc.addPage(); y = 16 }
-    doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(9); doc.setTextColor(...INK)
-    doc.text(lines, MARGIN, y)
-    y += lines.length * 4.6 + 2
+  const refX = width / 2 - 10
+  const ref = (label: string, value: string) => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...BLACK)
+    doc.text(label, refX, y)
+    doc.setFont('helvetica', 'bold')
+    const lines = doc.splitTextToSize(pdfText(value), width - MARGIN - refX - 42)
+    doc.text(lines, refX + 42, y)
+    y += lines.length * 5 + 1.5
   }
-  paragraph(`Se firma en ${data.company.city ? pdfText(data.company.city) : 'Colombia'}, el ${bogotaDate(data.issuedAt)}.`)
-  if (data.company.paymentInfo.trim()) { paragraph('Páguese la cuenta:', true); paragraph(data.company.paymentInfo) }
+  ref('Cuenta de cobro No.:', data.number)
+  ref('Ciudad y fecha:', place)
+  ref('Vencimiento:', data.dueAt ? bogotaDate(data.dueAt) : 'Contra entrega')
+  if (data.period) ref('Período:', periodLabel(data.period))
+  y += 8
 
-  if (y + 36 > height - 22) { doc.addPage(); y = 16 }
-  y += 4
-  doc.setDrawColor(...MUTED); doc.setLineWidth(0.3)
-  doc.line(MARGIN, y + 14, MARGIN + 75, y + 14)
-  doc.line(width - MARGIN - 75, y + 14, width - MARGIN, y + 14)
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...INK)
-  doc.text(company, MARGIN, y + 19); doc.text('Aceptada:', width - MARGIN - 75, y + 19)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED)
-  if (data.company.nit) doc.text(`NIT / C.C. ${pdfText(data.company.nit)}`, MARGIN, y + 23.5)
-  doc.text(doc.splitTextToSize(pdfText(customerName), 75)[0], width - MARGIN - 75, y + 23.5)
-  y += 32
+  // Payer and payee, centred.
+  write(customerName, { size: 12, bold: true, align: 'center', gap: 1 })
+  if (data.customer.taxId) write(`CC / NIT ${data.customer.taxId}`, { size: 10, bold: true, align: 'center', gap: 1 })
+  if (data.customer.businessName && data.customer.businessName !== data.customer.name) write(data.customer.name, { size: 9, align: 'center', color: GRAY, gap: 1 })
+  y += 3
+  write('Pago a', { size: 10, bold: true, align: 'center', gap: 4 })
+  write(issuer, { size: 11, bold: true, align: 'center', gap: 1 })
+  if (data.company.nit) write(`CC / NIT ${data.company.nit}`, { size: 10, bold: true, align: 'center', gap: 1 })
+  if (data.company.legalNote.trim()) write('(responsable del IVA - Régimen Simplificado)', { size: 9, align: 'center', color: GRAY, gap: 1 })
+  y += 8
 
+  // Amount in words and concept.
+  const amountLine = `La suma de ${pdfText(data.amountInWords)} (${formatMoney(data.totalCents)}) por concepto de ${pdfText(data.concept)}.`
+  const lines = doc.splitTextToSize(amountLine, textWidth)
+  if (y + lines.length * 5 > height - 30) { doc.addPage(); y = 22 }
+  doc.setFontSize(10); doc.setTextColor(...BLACK)
+  let cursorY = y
+  for (const line of lines) { doc.setFont('helvetica', 'normal'); doc.text(line, MARGIN, cursorY, { align: 'justify', maxWidth: textWidth }); cursorY += 5 }
+  y = cursorY + 2
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text(`Total a pagar: ${formatMoney(data.totalCents)}`, MARGIN, y); y += 8
+
+  write(`Se firma en ${data.company.city ? pdfText(data.company.city) : 'Colombia'}, el ${bogotaDate(data.issuedAt)}.`, { size: 10, gap: 4 })
+  if (data.company.paymentInfo.trim()) {
+    write('Páguese la cuenta', { size: 10, gap: 2 })
+    write(data.company.paymentInfo, { size: 10, bold: true, gap: 2 })
+  }
+  if (data.company.email) write(data.company.email, { size: 9, color: GRAY, gap: 2 })
+  write(issuer, { size: 10, bold: true, gap: 2 })
+  y += 10
+
+  // Acceptance line for the customer.
+  if (y + 26 > height - 30) { doc.addPage(); y = 22 }
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...BLACK)
+  doc.text('Aceptada:', MARGIN, y); y += 14
+  doc.setDrawColor(...BLACK); doc.setLineWidth(0.3); doc.line(MARGIN, y, MARGIN + 80, y); y += 5
+  doc.setFont('helvetica', 'bold'); doc.text(doc.splitTextToSize(customerName.toUpperCase(), 80)[0], MARGIN + 2, y); y += 8
+
+  // Legal note and status.
   if (data.company.legalNote.trim()) {
-    const lines = doc.splitTextToSize(pdfText(data.company.legalNote), width - MARGIN * 2)
-    if (y + lines.length * 3.8 > height - 20) { doc.addPage(); y = 16 }
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...MUTED)
-    doc.text(lines, MARGIN, y)
+    const note = doc.splitTextToSize(pdfText(data.company.legalNote), textWidth)
+    const noteY = Math.max(y + 4, height - 20 - note.length * 3.8)
+    if (noteY + note.length * 3.8 > height - 12) { doc.addPage(); y = 22 }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...BLACK)
+    doc.text(note, MARGIN, noteY > y ? noteY : y)
   }
-
-  if (data.status === 'VOID') {
-    const pages = doc.getNumberOfPages()
-    for (let page = 1; page <= pages; page++) {
-      doc.setPage(page); doc.setFont('helvetica', 'bold'); doc.setFontSize(48); doc.setTextColor(220, 38, 38)
+  const pages = doc.getNumberOfPages()
+  const generated = bogotaDateTime(new Date().toISOString())
+  for (let page = 1; page <= pages; page++) {
+    doc.setPage(page)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GRAY)
+    doc.text(`Cuenta de cobro ${pdfText(data.number)} | Generada el ${generated}`, MARGIN, height - 8)
+    if (pages > 1) doc.text(`Página ${page} de ${pages}`, width - MARGIN, height - 8, { align: 'right' })
+    if (data.status === 'VOID') {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(48); doc.setTextColor(170, 170, 170)
       doc.text('ANULADA', width / 2, height / 2, { align: 'center', angle: 30 })
     }
   }
-  drawFooter(doc, { company: data.company, reference: `Cuenta de cobro ${data.number}`, generatedAt: bogotaDateTime(new Date().toISOString()) })
   return pdfBytes(doc)
 }

@@ -2,13 +2,14 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Save, Lock, User as UserIcon, Mail, Phone, MapPin } from 'lucide-react'
+import { Save, Lock, User as UserIcon, Mail, Phone, MapPin, Briefcase } from 'lucide-react'
 
 interface User {
   id: string
   name: string | null
   email: string | null
   phone: string | null
+  jobTitle?: string | null
   location: string | null
   role: string
 }
@@ -23,6 +24,7 @@ export default function ProfileForm({ user }: { user: User }) {
     name: user.name || '',
     email: user.email || "",
     phone: user.phone || '',
+    jobTitle: user.jobTitle || '',
     location: user.location || '',
   })
 
@@ -187,6 +189,24 @@ export default function ProfileForm({ user }: { user: User }) {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 placeholder="+1 234 567 8900"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <div className="flex items-center space-x-2">
+                  <Briefcase className="h-4 w-4" />
+                  <span>Cargo</span>
+                </div>
+              </label>
+              <input
+                type="text"
+                maxLength={100}
+                value={formData.jobTitle}
+                onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="Asistente administrativa y contable"
+              />
+              <p className="text-xs text-gray-500 mt-1">Nombre, cargo, correo y teléfono se imprimen en la firma de las cotizaciones que creas.</p>
             </div>
 
             <div>

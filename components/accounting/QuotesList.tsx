@@ -2,14 +2,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Plus, Download, Eye, FileText, Search } from 'lucide-react'
+import { Plus, Download, Eye, FileText, Search, Mail, Loader2 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { api, type CustomerOption } from './api'
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/support/ui'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import Pagination from '@/components/tickets/Pagination'
 import { formatMoney, formatDateTimeCO } from '@/lib/accounting/format'
 import type { SerializedQuote } from '@/lib/accounting/quotes'
 
 type ListResponse = { quotes: SerializedQuote[]; total: number; page: number; perPage: number }
+type EmailResult = { status: 'sent' | 'skipped' | 'failed'; recipient: string | null; message: string }
 type Customer = Pick<CustomerOption, 'id' | 'name' | 'businessName' | 'taxId' | 'email'>
 
 export default function QuotesList() {
@@ -24,6 +27,21 @@ export default function QuotesList() {
 
   const [searchTerm, setSearchTerm] = useState(q)
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [emailing, setEmailing] = useState<SerializedQuote | null>(null)
+  const [sending, setSending] = useState(false)
+
+  async function sendEmail() {
+    if (!emailing || sending) return
+    setSending(true)
+    try {
+      const { email } = await api<{ email: EmailResult }>(`/api/quotes/${encodeURIComponent(emailing.id)}/email`, { method: 'POST' })
+      setEmailing(null)
+      if (email.status === 'sent') toast.success(email.message, { duration: 6000 })
+      else if (email.status === 'skipped') toast(email.message, { icon: '⚠️', duration: 8000 })
+      else toast.error(email.message, { duration: 8000 })
+    } catch (e) { toast.error((e as Error).message) }
+    finally { setSending(false) }
+  }
   const [data, setData] = useState<ListResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -126,7 +144,7 @@ export default function QuotesList() {
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{formatDateTimeCO(quote.createdAt)}</td>
                   <td className="px-4 py-3">
                     <div className="text-sm font-medium text-gray-900">{quote.customer.businessName || quote.customer.name}</div>
-                    <div className="text-xs text-gray-500">{[quote.customer.businessName && quote.customer.businessName !== quote.customer.name ? quote.customer.name : '', quote.customer.taxId ? `NIT/CC ${quote.customer.taxId}` : ''].filter(Boolean).join(' · ')}</div>
+                    <div className="text-xs text-gray-500">{[quote.customer.businessName && quote.customer.businessName !== quote.customer.name ? quote.customer.name : '', quote.customer.taxId ? `NIT/CC ${quote.customer.taxId}` : '', quote.customer.email || ''].filter(Boolean).join(' · ')}</div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-700 tabular-nums">{formatMoney(quote.subtotalCents)}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-700 tabular-nums">{quote.taxName ? `${formatMoney(quote.taxCents)}` : '—'}</td>
@@ -135,6 +153,7 @@ export default function QuotesList() {
                     <div className="flex items-center gap-1">
                       <Link href={`/dashboard/quotes/${quote.id}`} title="Ver cotización" aria-label={`Ver ${quote.numberLabel}`} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-primary-600"><Eye className="h-4 w-4" /></Link>
                       <a href={`/api/quotes/${quote.id}/pdf`} title="Descargar PDF" aria-label={`Descargar PDF de ${quote.numberLabel}`} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-primary-600"><Download className="h-4 w-4" /></a>
+                      <button type="button" onClick={() => setEmailing(quote)} disabled={!quote.customer.email} title={quote.customer.email ? `Enviar por correo a ${quote.customer.email}` : 'La cotización no tiene correo de destino'} aria-label={`Enviar ${quote.numberLabel} por correo`} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-primary-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"><Mail className="h-4 w-4" /></button>
                     </div>
                   </td>
                 </tr>
@@ -145,5 +164,15 @@ export default function QuotesList() {
       </div>}
 
     {data && <Pagination currentPage={page} totalPages={totalPages} totalCount={data.total} perPage={data.perPage} itemLabel="cotizaciones" />}
+
+    <Dialog open={!!emailing} onOpenChange={open => { if (!open && !sending) setEmailing(null) }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Enviar cotización por correo</DialogTitle><DialogDescription>Se enviará la cotización <strong>{emailing?.numberLabel}</strong> con el PDF adjunto a <strong>{emailing?.customer.email}</strong>.</DialogDescription></DialogHeader>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" disabled={sending} onClick={() => setEmailing(null)}>Cancelar</Button>
+          <Button disabled={sending} onClick={() => void sendEmail()}>{sending ? <><Loader2 size={16} className="animate-spin" /> Enviando…</> : <><Mail size={16} /> Enviar</>}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </>
 }

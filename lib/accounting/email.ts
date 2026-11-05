@@ -86,13 +86,16 @@ export async function sendQuoteEmail(quoteId: string, actorId: string): Promise<
   try {
     const quote = await prisma.quote.findUnique({ where: { id: quoteId }, include: quoteInclude })
     if (!quote) return finish('failed', null, 'La cotización no existe.')
-    const email = emailSchema.safeParse(quote.customer?.email ?? '')
-    if (!email.success) return finish('skipped', quote.customer?.email || null, 'El cliente no tiene un correo válido registrado. Agrega el correo en Clientes y vuelve a intentarlo.')
+    // Registered customers use their current email; unregistered ones the email typed on the quote.
+    const snapshotEmail = (quote.customerSnapshot as { email?: string | null } | null)?.email || ''
+    const recipient = quote.customer ? quote.customer.email ?? '' : snapshotEmail
+    const email = emailSchema.safeParse(recipient)
+    if (!email.success) return finish('skipped', recipient || null, quote.customer ? 'El cliente no tiene un correo válido registrado. Agrega el correo en Clientes y vuelve a intentarlo.' : 'La cotización no tiene un correo de destino. Crea una nueva con el correo del cliente para enviarla.')
     const company = quote.companySnapshot as { name: string; logoUrl: string }
     const number = formatQuoteNumber(quote.number)
     const pdf = await quotePdfBuffer(quote)
     const logo = await logoAttachment(company.logoUrl || '')
-    const customerName = quote.customer?.name || quote.customer?.email || 'cliente'
+    const customerName = quote.customer?.name || (quote.customerSnapshot as { name?: string } | null)?.name || email.data
     const template = getDocumentEmailTemplate({
       orgName: company.name, customerName, heading: 'Cotización', intro: 'Adjuntamos la cotización solicitada. Quedamos atentos a cualquier inquietud.',
       documentTitle: `${quote.title} ${number}`, rows: [['Fecha', formatDateCO(quote.createdAt)], ['Subtotal', formatMoney(Math.round(Number(quote.subtotal) * 100))], ...(quote.taxName ? [[quote.taxName, formatMoney(Math.round(Number(quote.taxAmount) * 100))] as [string, string]] : []), ['Total', formatMoney(Math.round(Number(quote.total) * 100))]],

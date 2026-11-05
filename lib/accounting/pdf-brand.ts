@@ -29,7 +29,7 @@ export async function loadPdf() {
 
 export const finalY = (doc: jsPDF) => (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 0
 
-/** Blue band with logo, company identity and the document title/number on the right. Returns the Y below the stripe. */
+/** Blue band with logo, legal name, NIT and website; the title/number on the right. Contact details go in the footer. Returns the Y below the stripe. */
 export function drawLetterhead(doc: jsPDF, options: { company: DocCompany; logo?: PdfLogo; title: string; number: string; subtitle?: string }) {
   const width = doc.internal.pageSize.getWidth()
   const { company } = options
@@ -47,10 +47,8 @@ export function drawLetterhead(doc: jsPDF, options: { company: DocCompany; logo?
   doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(14)
   doc.text(doc.splitTextToSize(pdfText(company.name, 'SIP SOPORTE'), 90)[0], textX, 14)
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(219, 230, 250)
-  const identity = [company.nit && `NIT ${company.nit}`, company.website].filter(Boolean).map(value => pdfText(value)).join('  |  ')
-  if (identity) doc.text(doc.splitTextToSize(identity, 90)[0], textX, 20)
-  const contact = [company.phone && `Tel. ${company.phone}`, company.email].filter(Boolean).map(value => pdfText(value)).join('  |  ')
-  if (contact) doc.text(doc.splitTextToSize(contact, 90)[0], textX, 25)
+  if (company.nit) doc.text(doc.splitTextToSize(`NIT ${pdfText(company.nit)}`, 90)[0], textX, 20)
+  if (company.website) doc.text(doc.splitTextToSize(pdfText(company.website), 90)[0], textX, company.nit ? 25 : 20)
   doc.setFontSize(8); doc.text(pdfText(options.title).toUpperCase(), width - MARGIN, 12, { align: 'right' })
   doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(255, 255, 255)
   doc.text(pdfText(options.number), width - MARGIN, 20, { align: 'right' })
@@ -62,11 +60,11 @@ export function drawLetterhead(doc: jsPDF, options: { company: DocCompany; logo?
   return 41
 }
 
-/** Footer on every page: company contact line, generation note and page numbers. */
+/** Footer on every page: email and phone (plus address), generation note and page numbers. */
 export function drawFooter(doc: jsPDF, options: { company: DocCompany; reference: string; generatedAt: string }) {
   const width = doc.internal.pageSize.getWidth(), height = doc.internal.pageSize.getHeight()
   const pages = doc.getNumberOfPages()
-  const contact = [options.company.address, options.company.city, options.company.phone && `Tel. ${options.company.phone}`, options.company.email, options.company.website].filter(Boolean).map(value => pdfText(value)).join('  |  ')
+  const contact = [options.company.email, options.company.phone && `Tel. ${options.company.phone}`, [options.company.address, options.company.city].filter(Boolean).join(', ')].filter(Boolean).map(value => pdfText(value)).join('  |  ')
   for (let page = 1; page <= pages; page++) {
     doc.setPage(page)
     doc.setDrawColor(...LINE); doc.setLineWidth(0.2); doc.line(MARGIN, height - 15, width - MARGIN, height - 15)

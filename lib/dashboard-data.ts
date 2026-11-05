@@ -11,7 +11,7 @@ export const getDashboardUser = cache(async () => {
   if (!session) return null
   return prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, name: true, email: true, role: true, avatar: true,
+    select: { id: true, name: true, email: true, role: true, avatar: true, jobTitle: true,
       phone: true, location: true, address: true, createdAt: true, dailyEntryGoal: true, dailyClosureGoal: true,
       twoFactorEnabled: true, emailNotifications: true },
   })

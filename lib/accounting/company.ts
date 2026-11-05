@@ -7,8 +7,13 @@ import type { DocCompany, PdfLogo } from './pdf-brand'
 // Configuración > Información General; nothing is hard-coded except the reference wording
 // of the conditions and the legal note, which administrators can edit.
 export interface CompanyProfile extends DocCompany {
+  /** Short organization name used across the app (sidebar, emails). */
+  orgName: string
   logoUrl: string
   quoteConditions: string
+  /** Issuer of the cuentas de cobro; falls back to the company identity. */
+  billingName: string
+  billingTaxId: string
   billingPaymentInfo: string
   billingLegalNote: string
   billingDueDays: number
@@ -26,10 +31,15 @@ export async function loadCompanyProfile(db: Db = prisma): Promise<CompanyProfil
   } catch { /* Documents still render with the defaults when settings are unavailable. */ }
   const get = (key: keyof typeof COMPANY_DEFAULTS) => (values[key] ?? '').trim() || COMPANY_DEFAULTS[key]
   const dueDays = parseInt(get('billing_due_days'), 10)
+  const orgName = get('org_name')
+  // Documents print the legal name (razón social); the short name is the fallback.
+  const name = get('org_business_name') || orgName
+  const nit = get('org_nit')
   return {
-    name: get('org_name'), nit: get('org_nit'), phone: get('org_phone'), email: get('org_email'), website: get('org_website'),
+    name, orgName, nit, phone: get('org_phone'), email: get('org_email'), website: get('org_website'),
     address: get('org_address'), city: get('org_city'), logoUrl: (values.org_logo ?? '').trim(),
-    quoteConditions: get('quote_conditions'), billingPaymentInfo: get('billing_payment_info'), billingLegalNote: get('billing_legal_note'),
+    quoteConditions: get('quote_conditions'), billingName: get('billing_name') || name, billingTaxId: get('billing_tax_id') || nit,
+    billingPaymentInfo: get('billing_payment_info'), billingLegalNote: get('billing_legal_note'),
     billingDueDays: Number.isInteger(dueDays) && dueDays >= 0 && dueDays <= 365 ? dueDays : 30,
   }
 }

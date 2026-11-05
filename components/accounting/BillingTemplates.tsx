@@ -5,19 +5,22 @@ import { ArrowLeft, Plus, Play, Pencil, Power, History, CheckCircle2, AlertTrian
 import { toast } from 'react-hot-toast'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/support/ui'
 import { SearchSelect } from '@/components/ui/SearchSelect'
+import { MoneyInput } from './MoneyInput'
 import { api, type CustomerOption } from './api'
 import type { SerializedTemplate, GenerateResult } from '@/lib/accounting/billing'
 import { currentPeriod, periodLabel, formatMoney, formatShortDateCO, toCents } from '@/lib/accounting/format'
 
 type Template = Omit<SerializedTemplate, 'accounts'> & { generated: { id: string; numberLabel: string; issuedAt: string; status: 'ISSUED' | 'VOID' } | null }
 type ListResponse = { period: string; templates: Template[] }
-type Draft = { id?: string; customerId: string; concept: string; total: string; active: boolean; accountsCount: number }
+type Product = { id: string; name: string; description: string | null; price: number; active: boolean }
+type Draft = { id?: string; customerId: string; productId: string; concept: string; totalCents: number | null; active: boolean; accountsCount: number }
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm'
 
 export default function BillingTemplates() {
   const [period, setPeriod] = useState(currentPeriod)
   const [data, setData] = useState<ListResponse | null>(null)
   const [customers, setCustomers] = useState<CustomerOption[]>([])
+  const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<string[]>([])
@@ -40,7 +43,17 @@ export default function BillingTemplates() {
     api<Array<{ id: string; name: string | null; email: string | null; businessName: string | null; taxId: string | null; phone: string | null; address: string | null; location: string | null }>>('/api/customers')
       .then(list => setCustomers(list.map(c => ({ id: c.id, name: c.name || c.email || 'Cliente', businessName: c.businessName, taxId: c.taxId, email: c.email, phone: c.phone, address: c.address, city: c.location }))))
       .catch(() => { /* The form reports the missing list when opened. */ })
+    api<Product[]>('/api/products?active=1').then(setProducts).catch(() => { /* The picker is optional. */ })
   }, [])
+  // Choosing a catalog product prefills concept and total; both stay editable.
+  function chooseProduct(id: string) {
+    setDraft(current => {
+      if (!current) return current
+      const product = products.find(p => p.id === id)
+      if (!product) return { ...current, productId: id }
+      return { ...current, productId: id, concept: [product.name, product.description].filter(Boolean).join(' - ').slice(0, 500), totalCents: toCents(product.price) }
+    })
+  }
 
   const templates = data?.templates || []
   const pending = templates.filter(t => t.active && !t.generated)
@@ -63,14 +76,14 @@ export default function BillingTemplates() {
   const draftErrors = draft ? {
     customer: !draft.customerId ? 'Selecciona el cliente.' : '',
     concept: !draft.concept.trim() ? 'Describe el producto o concepto.' : '',
-    total: draft.total.trim() === '' || !Number.isFinite(Number(draft.total)) || Number(draft.total) < 0 ? 'Indica el total (cero o mayor).' : '',
+    total: draft.totalCents === null || draft.totalCents < 0 ? 'Indica el total (cero o mayor).' : '',
   } : { customer: '', concept: '', total: '' }
   async function saveDraft(e: React.FormEvent) {
     e.preventDefault(); setAttempted(true)
     if (!draft || Object.values(draftErrors).some(Boolean)) return
     setBusy(true)
     try {
-      const payload = { customerId: draft.customerId, concept: draft.concept.trim(), total: Number(draft.total), active: draft.active, frequency: 'MONTHLY' }
+      const payload = { customerId: draft.customerId, concept: draft.concept.trim(), total: (draft.totalCents ?? 0) / 100, active: draft.active, frequency: 'MONTHLY' }
       if (draft.id) await api(`/api/billing/templates/${draft.id}`, { method: 'PATCH', json: payload })
       else await api('/api/billing/templates', { method: 'POST', json: payload })
       toast.success(draft.id ? 'Plantilla actualizada. Aplica a las próximas cuentas.' : 'Plantilla creada')
@@ -98,7 +111,7 @@ export default function BillingTemplates() {
       <Link href="/dashboard/billing" className="mb-3 inline-flex items-center text-gray-600 hover:text-gray-900"><ArrowLeft className="mr-2 h-4 w-4" /> Volver a cuentas de cobro</Link>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-3xl font-bold text-gray-900">Cuentas de cobro recurrentes</h1><p className="mt-1 text-gray-600">Configura la cuenta una vez y genera cada período solo las que selecciones.</p></div>
-        <Button disabled={busy} onClick={() => { setAttempted(false); setDraft({ customerId: '', concept: '', total: '', active: true, accountsCount: 0 }) }}><Plus size={16} /> Nueva plantilla</Button>
+        <Button disabled={busy} onClick={() => { setAttempted(false); setDraft({ customerId: '', productId: '', concept: '', totalCents: null, active: true, accountsCount: 0 }) }}><Plus size={16} /> Nueva plantilla</Button>
       </div>
     </div>
 
@@ -151,7 +164,7 @@ export default function BillingTemplates() {
               </td>
               <td className="px-4 py-3"><div className="flex flex-wrap gap-1">
                 <button type="button" disabled={!selectable(t) || busy || future} onClick={() => setConfirming([t.id])} className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-2 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-40"><Play size={14} /> Generar</button>
-                <button type="button" disabled={busy} onClick={() => { setAttempted(false); setDraft({ id: t.id, customerId: t.customerId, concept: t.concept, total: String(t.total), active: t.active, accountsCount: t.accountsCount }) }} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><Pencil size={14} /> Editar</button>
+                <button type="button" disabled={busy} onClick={() => { setAttempted(false); setDraft({ id: t.id, customerId: t.customerId, productId: '', concept: t.concept, totalCents: t.totalCents, active: t.active, accountsCount: t.accountsCount }) }} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><Pencil size={14} /> Editar</button>
                 <button type="button" disabled={busy} onClick={() => setToggling(t)} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><Power size={14} /> {t.active ? 'Desactivar' : 'Activar'}</button>
                 <button type="button" disabled={busy} onClick={() => void openHistory(t)} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><History size={14} /> Historial ({t.accountsCount})</button>
               </div></td>
@@ -173,6 +186,12 @@ export default function BillingTemplates() {
               {attempted && draftErrors.customer && <p role="alert" className="mt-1 text-xs font-medium text-red-700">{draftErrors.customer}</p>}
             </div>
             <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Producto del catálogo (opcional)</label>
+              <SearchSelect aria-label="Producto del catálogo" placeholder={products.length ? 'Elegir producto para llenar concepto y total…' : 'Sin productos activos en el catálogo'} emptyOption="Concepto manual" disabled={busy || !products.length} value={draft.productId} onChange={chooseProduct}
+                options={products.map(p => ({ id: p.id, label: p.name, description: [p.description, formatMoney(toCents(p.price))].filter(Boolean).join(' · ') }))} />
+              <p className="mt-1 text-xs text-gray-500">Llena el concepto y el total con el precio sugerido; puedes editarlos.</p>
+            </div>
+            <div>
               <label htmlFor="template-concept" className="mb-1 block text-sm font-medium text-gray-700">Producto o concepto <span className="text-red-500">*</span></label>
               <textarea id="template-concept" rows={3} maxLength={500} value={draft.concept} onChange={e => setDraft({ ...draft, concept: e.target.value })} className={inputClass} aria-invalid={attempted && !!draftErrors.concept} />
               {attempted && draftErrors.concept && <p role="alert" className="mt-1 text-xs font-medium text-red-700">{draftErrors.concept}</p>}
@@ -180,8 +199,8 @@ export default function BillingTemplates() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="template-total" className="mb-1 block text-sm font-medium text-gray-700">Total (COP) <span className="text-red-500">*</span></label>
-                <input id="template-total" type="number" inputMode="decimal" min={0} step={1} value={draft.total} onChange={e => setDraft({ ...draft, total: e.target.value })} className={inputClass} aria-invalid={attempted && !!draftErrors.total} />
-                <p className="mt-1 text-xs text-gray-500">{draft.total.trim() && Number.isFinite(Number(draft.total)) ? formatMoney(toCents(draft.total)) : ' '}</p>
+                <MoneyInput id="template-total" valueCents={draft.totalCents} onChange={cents => setDraft({ ...draft, totalCents: cents })} disabled={busy} placeholder="250.000" invalid={attempted && !!draftErrors.total} />
+                <p className="mt-1 text-xs text-gray-500">{draft.totalCents !== null ? formatMoney(draft.totalCents) : ' '}</p>
                 {attempted && draftErrors.total && <p role="alert" className="text-xs font-medium text-red-700">{draftErrors.total}</p>}
               </div>
               <div>

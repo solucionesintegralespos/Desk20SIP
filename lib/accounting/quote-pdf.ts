@@ -22,6 +22,8 @@ export interface QuoteDocument {
   title?: string
   notes?: string | null
   conditions?: string | null
+  /** Staff member who issued the quote; printed under "Cordialmente". */
+  signer?: { name: string; jobTitle?: string | null; email?: string | null; phone?: string | null } | null
 }
 
 export async function quotePdf(data: QuoteDocument) {
@@ -100,13 +102,19 @@ export async function quotePdf(data: QuoteDocument) {
   if (data.conditions?.trim()) block('Formas de pago y consideraciones', data.conditions)
 
   const height = doc.internal.pageSize.getHeight()
-  if (y + 22 > height - 20) { doc.addPage(); y = 16 }
+  if (y + 30 > height - 20) { doc.addPage(); y = 16 }
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...INK)
   doc.text('Cordialmente,', MARGIN, y + 4)
-  doc.setFont('helvetica', 'bold'); doc.text(pdfText(data.company.name, 'SIP SOPORTE'), MARGIN, y + 12)
+  // Signature: the person who issued the quote (name, job title, email, phone), then the company.
+  const signer = data.signer
+  doc.setFont('helvetica', 'bold'); doc.text(pdfText(signer?.name || data.company.name, 'SIP SOPORTE'), MARGIN, y + 13)
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED)
-  const contact = [data.company.nit && `NIT ${data.company.nit}`, data.company.phone, data.company.email].filter(Boolean).map(value => pdfText(value)).join('  |  ')
-  if (contact) doc.text(contact, MARGIN, y + 17)
+  let lineY = y + 17.5
+  for (const line of [signer?.jobTitle, signer?.email, signer?.phone, signer ? data.company.name : null]) {
+    if (!line) continue
+    doc.text(doc.splitTextToSize(pdfText(line), 120)[0], MARGIN, lineY)
+    lineY += 4
+  }
 
   drawFooter(doc, { company: data.company, reference: `${title} ${data.number}`, generatedAt: bogotaDateTime(new Date().toISOString()) })
   return pdfBytes(doc)

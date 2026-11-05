@@ -7,6 +7,8 @@ import toast from 'react-hot-toast'
 import { api, type CompanyBranding, type CustomerOption } from './api'
 import { PdfPreview } from './PdfPreview'
 import { SearchSelect } from '@/components/ui/SearchSelect'
+import { SearchFilter, type SearchValue } from '@/components/support/SearchFilter'
+import { MoneyInput } from './MoneyInput'
 import { quotePdf, type QuoteDocument } from '@/lib/accounting/quote-pdf'
 import { formatMoney, formatNumber, quoteTotals, toCents } from '@/lib/accounting/format'
 import { clientId } from '@/lib/support/client-id'
@@ -14,10 +16,10 @@ import { clientId } from '@/lib/support/client-id'
 type Customer = Pick<CustomerOption, 'id' | 'name' | 'businessName' | 'taxId' | 'email' | 'phone' | 'address'> & { location?: string | null }
 type Product = { id: string; name: string; description: string | null; price: number; active: boolean }
 type Tax = { id: string; name: string; rate: number; active: boolean; isDefault: boolean }
-type Line = { key: string; productId: string | null; name: string; description: string; quantity: string; unitPrice: string }
+type Line = { key: string; productId: string | null; name: string; description: string; quantity: string; unitPriceCents: number | null }
 
 const inputClass = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500'
-const newLine = (): Line => ({ key: clientId(), productId: null, name: '', description: '', quantity: '1', unitPrice: '0' })
+const newLine = (): Line => ({ key: clientId(), productId: null, name: '', description: '', quantity: '1', unitPriceCents: 0 })
 
 export default function QuoteEditor() {
   const router = useRouter()
@@ -27,11 +29,13 @@ export default function QuoteEditor() {
   const [branding, setBranding] = useState<CompanyBranding | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [customerId, setCustomerId] = useState('')
+  // `id` set: registered customer; otherwise `query` is the free-text name of an unregistered one.
+  const [customerPick, setCustomerPick] = useState<SearchValue>({ query: '', id: '' })
   const [taxId, setTaxId] = useState('')
   const [lines, setLines] = useState<Line[]>([newLine()])
   const [notes, setNotes] = useState('')
   const [conditions, setConditions] = useState('')
+  const [freeEmail, setFreeEmail] = useState('')
   const [saving, setSaving] = useState(false)
   const [attempted, setAttempted] = useState(false)
 
@@ -54,12 +58,14 @@ export default function QuoteEditor() {
     return () => { cancelled = true }
   }, [])
 
+  const customerId = customerPick.id
   const customer = customers.find(c => c.id === customerId) || null
+  const freeCustomerName = !customerId ? customerPick.query.trim() : ''
   const tax = taxes.find(t => t.id === taxId) || null
   const customerOptions = useMemo(() => customers.map(c => ({ id: c.id, label: c.businessName || c.name || c.email || 'Sin nombre', description: [c.businessName && c.businessName !== c.name ? c.name : '', c.taxId ? `NIT/CC ${c.taxId}` : '', c.email].filter(Boolean).join(' · ') || undefined })), [customers])
   const productOptions = useMemo(() => products.map(p => ({ id: p.id, label: p.name, description: `${formatMoney(toCents(p.price))}${p.description ? ` · ${p.description}` : ''}` })), [products])
 
-  const parsedLines = lines.map(line => ({ ...line, qty: Number(line.quantity.replace(',', '.')), unitPriceCents: toCents(line.unitPrice) }))
+  const parsedLines = lines.map(line => ({ ...line, qty: Number(line.quantity.replace(',', '.')), unitPriceCents: line.unitPriceCents ?? 0 }))
   const totals = quoteTotals(parsedLines.map(l => ({ quantity: Number.isFinite(l.qty) && l.qty > 0 ? l.qty : 0, unitPriceCents: l.unitPriceCents })), tax ? tax.rate : null)
 
   const updateLine = (key: string, patch: Partial<Line>) => setLines(current => current.map(line => line.key === key ? { ...line, ...patch } : line))
@@ -67,11 +73,11 @@ export default function QuoteEditor() {
     const product = products.find(p => p.id === productId)
     if (!product) { updateLine(key, { productId: null }); return }
     // The suggested price is loaded once; editing it here never changes the catalog.
-    updateLine(key, { productId: product.id, name: product.name, description: product.description || '', unitPrice: String(product.price) })
+    updateLine(key, { productId: product.id, name: product.name, description: product.description || '', unitPriceCents: toCents(product.price) })
   }
 
   const errors = {
-    customer: !customerId ? 'Selecciona el cliente.' : '',
+    customer: !customerId && !freeCustomerName ? 'Selecciona un cliente o escribe su nombre.' : '',
     lines: !lines.length ? 'Agrega al menos un producto.' : parsedLines.some(l => !l.name.trim()) ? 'Cada ítem necesita una descripción.' : parsedLines.some(l => !Number.isFinite(l.qty) || l.qty <= 0) ? 'Las cantidades deben ser mayores que cero.' : parsedLines.some(l => l.unitPriceCents < 0) ? 'Los precios no pueden ser negativos.' : '',
   }
   const valid = !errors.customer && !errors.lines
@@ -79,20 +85,24 @@ export default function QuoteEditor() {
   // The preview renders the same document the server will generate after saving.
   const document: QuoteDocument | null = branding ? {
     company: branding.company, logo: branding.logo || undefined, number: 'Borrador', date: new Date().toISOString(),
-    customer: customer ? { name: customer.name || customer.email || 'Cliente', businessName: customer.businessName, taxId: customer.taxId, email: customer.email, phone: customer.phone, address: customer.address, city: customer.location } : { name: 'Cliente por seleccionar' },
+    customer: customer ? { name: customer.name || customer.email || 'Cliente', businessName: customer.businessName, taxId: customer.taxId, email: customer.email, phone: customer.phone, address: customer.address, city: customer.location } : { name: freeCustomerName || 'Cliente', email: freeEmail.trim() || null },
     items: parsedLines.map((l, index) => ({ name: l.name.trim() || 'Ítem sin descripción', description: l.description.trim() || null, quantity: Number.isFinite(l.qty) && l.qty > 0 ? l.qty : 0, unitPriceCents: l.unitPriceCents, totalCents: totals.lines[index] })),
     subtotalCents: totals.subtotalCents, taxName: tax?.name || null, taxRatePercent: tax ? tax.rate : null, taxCents: totals.taxCents, totalCents: totals.totalCents,
-    title: 'Cotización', notes, conditions,
+    title: 'Cotización', notes, conditions, signer: branding.issuer,
   } : null
-  const previewKey = JSON.stringify({ customerId, taxId, lines, notes, conditions, logo: !!branding?.logo })
+  const previewKey = JSON.stringify({ customerId, freeCustomerName, freeEmail, taxId, lines, notes, conditions, logo: !!branding?.logo, signer: branding?.issuer })
+  const freeEmailInvalid = !!freeCustomerName && !!freeEmail.trim() && !/^[^@ ]+@[^@ ]+[.][^@ ]+$/.test(freeEmail.trim())
+  const issuer = branding?.issuer || null
+  const signerMissing = issuer ? [!issuer.jobTitle && 'cargo', !issuer.phone && 'teléfono', !issuer.email && 'correo'].filter(Boolean) : []
 
   async function save() {
     setAttempted(true)
     if (!valid || saving) { if (!valid) toast.error(errors.customer || errors.lines); return }
+    if (freeEmailInvalid) { toast.error('Ingresa un correo válido para el cliente'); return }
     setSaving(true)
     try {
       const created = await api<{ id: string; numberLabel: string }>('/api/quotes', { method: 'POST', json: {
-        customerId, taxId: taxId || null, notes, conditions, title: 'Cotización',
+        customerId: customerId || null, customerName: freeCustomerName, customerEmail: customerId ? '' : freeEmail.trim(), taxId: taxId || null, notes, conditions, title: 'Cotización',
         items: parsedLines.map(l => ({ productId: l.productId, name: l.name.trim(), description: l.description.trim(), quantity: l.qty, unitPrice: l.unitPriceCents / 100 })),
       } })
       toast.success(`Cotización ${created.numberLabel} guardada`)
@@ -125,13 +135,19 @@ export default function QuoteEditor() {
         <section className="bg-white rounded-lg shadow p-5 space-y-4">
           <h2 className="font-semibold text-gray-900">Cliente</h2>
           <div>
-            <SearchSelect aria-label="Cliente" placeholder="Buscar cliente por nombre, razón social o NIT…" value={customerId} onChange={setCustomerId} options={customerOptions} invalid={attempted && !!errors.customer} />
+            <SearchFilter label="Cliente (busca uno registrado o escribe el nombre)" placeholder="Nombre, razón social o NIT…" options={customerOptions} value={customerPick} onChange={setCustomerPick} />
             {attempted && errors.customer && <p role="alert" className="mt-1 text-xs text-red-700">{errors.customer}</p>}
+            {freeCustomerName && <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <p className="text-xs text-gray-600">Este cliente no está en el directorio: la cotización se emitirá a nombre de «{freeCustomerName}».</p>
+              <label htmlFor="quote-free-email" className="mt-2 block text-sm font-medium text-gray-700">Correo del cliente (opcional, para enviarle la cotización)</label>
+              <input id="quote-free-email" type="email" inputMode="email" autoComplete="off" value={freeEmail} onChange={e => setFreeEmail(e.target.value)} placeholder="cliente@ejemplo.com" aria-invalid={freeEmailInvalid || undefined} className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${freeEmailInvalid ? 'border-red-400' : 'border-gray-300'}`} />
+              {freeEmailInvalid && <p role="alert" className="mt-1 text-xs text-red-700">Ingresa un correo válido.</p>}
+            </div>}
           </div>
           {customer && <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
             <div><dt className="text-gray-500">Nombre</dt><dd className="font-medium text-gray-900">{customer.name || '—'}</dd></div>
-            <div><dt className="text-gray-500">Razón social</dt><dd className="font-medium text-gray-900">{customer.businessName || 'No registrada'}</dd></div>
-            <div><dt className="text-gray-500">NIT / C.C.</dt><dd className="font-medium text-gray-900">{customer.taxId || 'No registrado'}</dd></div>
+            <div><dt className="text-gray-500">Razón social</dt><dd className="font-medium text-gray-900">{customer.businessName || '—'}</dd></div>
+            <div><dt className="text-gray-500">NIT / C.C.</dt><dd className="font-medium text-gray-900">{customer.taxId || '—'}</dd></div>
             <div><dt className="text-gray-500">Correo</dt><dd className="font-medium text-gray-900">{customer.email || 'Sin correo'}</dd></div>
             <div><dt className="text-gray-500">Teléfono</dt><dd className="font-medium text-gray-900">{customer.phone || '—'}</dd></div>
             <div><dt className="text-gray-500">Dirección</dt><dd className="font-medium text-gray-900">{[customer.address, customer.location].filter(Boolean).join(', ') || '—'}</dd></div>
@@ -157,7 +173,7 @@ export default function QuoteEditor() {
                       <input type="number" inputMode="decimal" min="0.01" step="0.01" value={line.quantity} onChange={e => updateLine(line.key, { quantity: e.target.value })} className={`${inputClass} mt-1 text-right tabular-nums`} />
                     </label>
                     <label className="text-xs text-gray-600">Valor unitario
-                      <input type="number" inputMode="decimal" min="0" step="0.01" value={line.unitPrice} onChange={e => updateLine(line.key, { unitPrice: e.target.value })} className={`${inputClass} mt-1 text-right tabular-nums`} />
+                      <MoneyInput aria-label={`Valor unitario del ítem ${index + 1}`} valueCents={line.unitPriceCents} onChange={cents => updateLine(line.key, { unitPriceCents: cents })} className="mt-1 text-sm" placeholder="0" />
                     </label>
                     <div className="text-xs text-gray-600 col-span-2 sm:col-span-1">Valor total
                       <p className="mt-1 px-3 py-2 rounded-lg bg-gray-50 text-right text-sm font-semibold text-gray-900 tabular-nums">{formatMoney(totals.lines[index])}</p>
@@ -193,6 +209,10 @@ export default function QuoteEditor() {
           <label className="block text-sm font-medium text-gray-700">Formas de pago y consideraciones
             <textarea value={conditions} onChange={e => setConditions(e.target.value)} rows={5} maxLength={4000} className={`${inputClass} mt-1`} />
           </label>
+          <p className="text-xs text-gray-500">
+            Firma: {issuer ? [issuer.name, issuer.jobTitle, issuer.email, issuer.phone].filter(Boolean).join(' · ') : 'Sin datos del usuario'}. Se toma de tu perfil.
+            {signerMissing.length > 0 && <> Agrega tu {signerMissing.join(', ')} en <Link href="/dashboard/profile" className="text-primary-600 hover:underline">Mi perfil</Link>.</>}
+          </p>
         </section>
       </div>
 

@@ -53,6 +53,7 @@ export async function PATCH(
     const invalid = validateUserPerformance(data)
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 })
     const { name, role, phone, location, password } = data
+    if (data.jobTitle !== undefined && data.jobTitle !== null && (typeof data.jobTitle !== 'string' || data.jobTitle.trim().length > 100)) return NextResponse.json({ error: 'El cargo no puede superar 100 caracteres' }, { status: 400 })
 
     if (role && !isManagedRole(role)) return NextResponse.json({ error: 'Los clientes se gestionan en Clientes' }, { status: 400 })
 
@@ -64,6 +65,8 @@ export async function PATCH(
       role,
       phone,
       location,
+      // Cargo is only changed when the request includes it (profile and user forms send it; others do not).
+      ...(data.jobTitle !== undefined ? { jobTitle: typeof data.jobTitle === 'string' && data.jobTitle.trim() ? data.jobTitle.trim() : null } : {}),
     }
 
     // If password is provided, hash it
@@ -86,6 +89,7 @@ export async function PATCH(
         email: true,
         role: true,
         phone: true,
+        jobTitle: true,
         location: true,
       }
     })

@@ -14,4 +14,11 @@ export async function api<T = unknown>(url: string, init?: RequestInit & { json?
 }
 
 export type CustomerOption = { id: string; name: string; businessName: string | null; taxId: string | null; email: string | null; phone: string | null; address: string | null; city: string | null }
-export type CompanyBranding = { company: { name: string; nit: string; phone: string; email: string; website: string; address: string; city: string; paymentInfo: string; legalNote: string; quoteConditions: string; billingDueDays: number }; logo: { dataUrl: string; format: 'PNG' | 'JPEG' } | null }
+export type CompanyBranding = {
+  company: { name: string; nit: string; phone: string; email: string; website: string; address: string; city: string; paymentInfo: string; legalNote: string; quoteConditions: string; billingDueDays: number }
+  /** Issuer printed on cuentas de cobro (may differ from the company). */
+  billing: { name: string; taxId: string; phone: string; email: string; city: string; paymentInfo: string; legalNote: string; dueDays: number }
+  /** Current user: signer of the quotes. */
+  issuer: { id: string; name: string; jobTitle: string | null; email: string | null; phone: string | null } | null
+  logo: { dataUrl: string; format: 'PNG' | 'JPEG' } | null
+}

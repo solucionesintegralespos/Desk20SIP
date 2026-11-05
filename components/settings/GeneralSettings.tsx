@@ -32,12 +32,15 @@ export default function GeneralSettings({
     org_name: initialOrgName,
     org_email: initialOrgEmail,
     org_logo: initialOrgLogo,
+    org_business_name: company('org_business_name'),
     org_nit: company('org_nit'),
     org_phone: company('org_phone'),
     org_website: company('org_website'),
     org_address: company('org_address'),
     org_city: company('org_city'),
     quote_conditions: company('quote_conditions'),
+    billing_name: company('billing_name'),
+    billing_tax_id: company('billing_tax_id'),
     billing_payment_info: company('billing_payment_info'),
     billing_legal_note: company('billing_legal_note'),
     billing_due_days: company('billing_due_days'),
@@ -99,17 +102,6 @@ export default function GeneralSettings({
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Email de Soporte
-          </label>
-          <input
-            type="email"
-            value={formData.org_email}
-            onChange={e => setFormData({ ...formData, org_email: e.target.value })}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
             Logo URL (Opcional)
           </label>
           <input
@@ -128,21 +120,33 @@ export default function GeneralSettings({
 
         <div className="pt-4 border-t">
           <h3 className="text-sm font-semibold text-gray-900 mb-1">Datos de la empresa (documentos)</h3>
-          <p className="text-sm text-gray-500 mb-4">Se imprimen en el membrete de cotizaciones y cuentas de cobro.</p>
+          <p className="text-sm text-gray-500 mb-4">Razón social, NIT y página web van en el encabezado de las cotizaciones; correo y teléfono en el pie de página.</p>
           <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Razón social</label>
+              <input type="text" maxLength={200} value={formData.org_business_name} onChange={e => setFormData({ ...formData, org_business_name: e.target.value })} placeholder="Soluciones Integrales POS S.A.S." className={inputClass} />
+              <p className="text-sm text-gray-500 mt-1">Se imprime en el encabezado de las cotizaciones; si está vacío se usa el nombre de la organización.</p>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">NIT</label>
                 <input type="text" maxLength={50} value={formData.org_nit} onChange={e => setFormData({ ...formData, org_nit: e.target.value })} placeholder="901.392.637-0" className={inputClass} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Teléfono</label>
-                <input type="tel" maxLength={100} value={formData.org_phone} onChange={e => setFormData({ ...formData, org_phone: e.target.value })} placeholder="+57 320 887 57 62" className={inputClass} />
+                <label className="block text-sm font-medium text-gray-700 mb-2">Página web</label>
+                <input type="text" maxLength={200} value={formData.org_website} onChange={e => setFormData({ ...formData, org_website: e.target.value })} placeholder="www.ejemplo.com" className={inputClass} />
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Sitio web</label>
-              <input type="text" maxLength={200} value={formData.org_website} onChange={e => setFormData({ ...formData, org_website: e.target.value })} placeholder="www.ejemplo.com" className={inputClass} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Correo (pie de página de los documentos)</label>
+                <input type="email" maxLength={254} value={formData.org_email} onChange={e => setFormData({ ...formData, org_email: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Teléfono</label>
+                <input type="tel" maxLength={100} value={formData.org_phone} onChange={e => setFormData({ ...formData, org_phone: e.target.value })} placeholder="+57 320 887 57 62" className={inputClass} />
+                <p className="text-sm text-gray-500 mt-1">Pie de página de los documentos.</p>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -158,16 +162,36 @@ export default function GeneralSettings({
         </div>
 
         <div className="pt-4 border-t">
-          <h3 className="text-sm font-semibold text-gray-900 mb-1">Cotizaciones y cuentas de cobro</h3>
-          <p className="text-sm text-gray-500 mb-4">Textos y plazos que aparecen en los documentos nuevos; los ya emitidos no cambian.</p>
+          <h3 className="text-sm font-semibold text-gray-900 mb-1">Cotizaciones</h3>
+          <p className="text-sm text-gray-500 mb-4">Texto que aparece en las cotizaciones nuevas; las ya emitidas no cambian.</p>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Formas de pago y consideraciones de las cotizaciones</label>
               <textarea rows={5} maxLength={4000} value={formData.quote_conditions} onChange={e => setFormData({ ...formData, quote_conditions: e.target.value })} className={inputClass} />
             </div>
+          </div>
+        </div>
+
+        <div className="pt-4 border-t">
+          <h3 className="text-sm font-semibold text-gray-900 mb-1">Cuentas de cobro</h3>
+          <p className="text-sm text-gray-500 mb-4">Quién emite las cuentas de cobro y cómo se paga. Las cuentas ya emitidas conservan sus datos.</p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nombre</label>
+                <input type="text" maxLength={200} value={formData.billing_name} onChange={e => setFormData({ ...formData, billing_name: e.target.value })} className={inputClass} />
+                <p className="text-sm text-gray-500 mt-1">Persona o empresa que emite las cuentas de cobro; si está vacío se usa la razón social.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">CC / NIT</label>
+                <input type="text" maxLength={50} value={formData.billing_tax_id} onChange={e => setFormData({ ...formData, billing_tax_id: e.target.value })} placeholder="74.283.118" className={inputClass} />
+                <p className="text-sm text-gray-500 mt-1">Si está vacío se usa el NIT.</p>
+              </div>
+            </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Instrucciones de pago de las cuentas de cobro (cuentas bancarias, Nequi, etc.)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Información para transferencias</label>
               <textarea rows={3} maxLength={2000} value={formData.billing_payment_info} onChange={e => setFormData({ ...formData, billing_payment_info: e.target.value })} placeholder="Nequi cuenta No. ... / Cuenta de ahorros No. ..." className={inputClass} />
+              <p className="text-sm text-gray-500 mt-1">Bancos, Nequi, número de cuenta…</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Nota legal al pie de la cuenta de cobro</label>

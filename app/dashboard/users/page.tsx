@@ -50,6 +50,7 @@ export default async function UsersPage({
         dailyEntryGoal: true, dailyClosureGoal: true,
         role: true,
         phone: true,
+        jobTitle: true,
         location: true,
         active: true,
         createdAt: true,

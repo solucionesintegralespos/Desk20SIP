@@ -31,6 +31,8 @@ export async function GET(request: Request) {
         { customer: { name: { contains: q, mode: 'insensitive' } } },
         { customer: { businessName: { contains: q, mode: 'insensitive' } } },
         { customer: { email: { contains: q, mode: 'insensitive' } } },
+        // Unregistered customers only exist in the snapshot.
+        { customerSnapshot: { path: ['name'], string_contains: q } },
       ]
     }
 

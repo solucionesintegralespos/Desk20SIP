@@ -15,6 +15,7 @@ interface EditUserModalProps {
     email: string | null
     role: UserRole
     phone: string | null
+    jobTitle?: string | null
     location: string | null
     avatar: string | null
     dailyEntryGoal: number | null
@@ -32,6 +33,7 @@ export default function EditUserModal({ user, onClose }: EditUserModalProps) {
     name: user.name || '',
     role: user.role,
     phone: user.phone || '',
+    jobTitle: user.jobTitle || '',
     location: user.location || '',
     newPassword: '',
     avatar: user.avatar || '',
@@ -59,6 +61,7 @@ export default function EditUserModal({ user, onClose }: EditUserModalProps) {
         name: formData.name,
         role: formData.role,
         phone: formData.phone,
+        jobTitle: formData.jobTitle,
         location: formData.location,
         avatar: formData.avatar,
         dailyEntryGoal: formData.dailyEntryGoal,
@@ -197,6 +200,20 @@ export default function EditUserModal({ user, onClose }: EditUserModalProps) {
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Cargo
+              </label>
+              <input
+                type="text"
+                maxLength={100}
+                value={formData.jobTitle}
+                onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Se imprime en la firma de las cotizaciones"
               />
             </div>
 

@@ -34,11 +34,18 @@ export async function GET(request: Request) {
         ] } },
       ]
     }
-    const [accounts, total] = await Promise.all([
+    // Totals cover every account matching the filters, not only the current page.
+    const [accounts, total, issued, voided] = await Promise.all([
       prisma.billingAccount.findMany({ where, select: accountSelect, orderBy: [{ issuedAt: 'desc' }, { number: 'desc' }], skip: (page - 1) * PER_PAGE, take: PER_PAGE }),
       prisma.billingAccount.count({ where }),
+      prisma.billingAccount.aggregate({ where: { ...where, status: 'ISSUED' }, _sum: { total: true }, _count: { _all: true } }),
+      prisma.billingAccount.aggregate({ where: { ...where, status: 'VOID' }, _sum: { total: true }, _count: { _all: true } }),
     ])
-    return Response.json({ accounts: accounts.map(serializeAccount), total, page, perPage: PER_PAGE })
+    const totals = {
+      count: total, issuedCount: issued._count._all, voidCount: voided._count._all,
+      issuedCents: Math.round(Number(issued._sum.total ?? 0) * 100), voidCents: Math.round(Number(voided._sum.total ?? 0) * 100),
+    }
+    return Response.json({ accounts: accounts.map(serializeAccount), total, page, perPage: PER_PAGE, totals })
   } catch (error) { return serviceError(error) }
 }
 

@@ -5,12 +5,13 @@ import { toast } from 'react-hot-toast'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Textarea } from '@/components/support/ui'
 import { api } from './api'
 import { formatMoney, formatNumber, toCents } from '@/lib/accounting/format'
+import { MoneyInput } from './MoneyInput'
 
 type Product = { id: string; name: string; description: string | null; price: number; active: boolean; createdAt: string; updatedAt: string }
 type Tax = { id: string; name: string; rate: number; active: boolean; isDefault: boolean }
 type Tab = 'products' | 'taxes'
 
-type ProductDraft = { id?: string; name: string; description: string; price: string }
+type ProductDraft = { id?: string; name: string; description: string; priceCents: number | null }
 type TaxDraft = { id?: string; name: string; rate: string; isDefault: boolean }
 
 const fieldClass = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500'
@@ -48,9 +49,8 @@ export default function Catalog() {
     if (!draft.name.trim()) errors.name = 'El nombre es obligatorio.'
     else if (draft.name.trim().length > 200) errors.name = 'Máximo 200 caracteres.'
     if (draft.description.length > 1000) errors.description = 'Máximo 1000 caracteres.'
-    const price = Number(draft.price.replace(',', '.'))
-    if (draft.price.trim() === '' || !Number.isFinite(price)) errors.price = 'Indica el precio sugerido.'
-    else if (price < 0) errors.price = 'El precio no puede ser negativo.'
+    if (draft.priceCents == null) errors.priceCents = 'Indica el precio sugerido.'
+    else if (draft.priceCents < 0) errors.priceCents = 'El precio no puede ser negativo.'
     return errors
   }
   async function saveProduct(draft: ProductDraft) {
@@ -58,7 +58,7 @@ export default function Catalog() {
     if (Object.keys(productErrors(draft)).length) return
     setBusy(true)
     try {
-      const body = { name: draft.name.trim(), description: draft.description.trim(), price: Math.round(Number(draft.price.replace(',', '.')) * 100) / 100 }
+      const body = { name: draft.name.trim(), description: draft.description.trim(), price: (draft.priceCents ?? 0) / 100 }
       if (draft.id) await api(`/api/products/${draft.id}`, { method: 'PATCH', json: body })
       else await api('/api/products', { method: 'POST', json: body })
       toast.success(draft.id ? 'Producto actualizado' : 'Producto creado')
@@ -124,7 +124,7 @@ export default function Catalog() {
         <p className="mt-1 text-gray-600">Productos e impuestos disponibles para las cotizaciones</p>
       </div>
       {tab === 'products'
-        ? <Button disabled={busy || loading} onClick={() => { setAttempted(false); setProductDraft({ name: '', description: '', price: '' }) }}><Plus size={16} /> Nuevo producto</Button>
+        ? <Button disabled={busy || loading} onClick={() => { setAttempted(false); setProductDraft({ name: '', description: '', priceCents: null }) }}><Plus size={16} /> Nuevo producto</Button>
         : <Button disabled={busy || loading} onClick={() => { setAttempted(false); setTaxDraft({ name: '', rate: '', isDefault: false }) }}><Plus size={16} /> Nuevo impuesto</Button>}
     </div>
 
@@ -155,7 +155,7 @@ export default function Catalog() {
               <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{formatMoney(toCents(product.price))}</td>
               <td className="px-4 py-3"><StatusPill active={product.active} /></td>
               <td className="whitespace-nowrap px-4 py-3 text-right"><div className="flex justify-end gap-2">
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => { setAttempted(false); setProductDraft({ id: product.id, name: product.name, description: product.description || '', price: String(product.price) }) }} aria-label={`Editar ${product.name}`}><Pencil size={14} /> Editar</Button>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => { setAttempted(false); setProductDraft({ id: product.id, name: product.name, description: product.description || '', priceCents: toCents(product.price) }) }} aria-label={`Editar ${product.name}`}><Pencil size={14} /> Editar</Button>
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => void toggleProduct(product)} aria-label={`${product.active ? 'Desactivar' : 'Activar'} ${product.name}`}><Power size={14} /> {product.active ? 'Desactivar' : 'Activar'}</Button>
               </div></td>
             </tr>)}</tbody>
@@ -195,8 +195,8 @@ export default function Catalog() {
             {pErrors.description && <span role="alert" className="mt-1 block text-xs font-medium text-red-700">{pErrors.description}</span>}
           </label>
           <label className="block text-sm font-medium text-gray-700">Precio sugerido (COP) <span className="text-red-600" aria-hidden="true">*</span>
-            <Input type="number" inputMode="decimal" min={0} step="0.01" required value={productDraft.price} aria-invalid={!!pErrors.price || undefined} onChange={e => setProductDraft({ ...productDraft, price: e.target.value })} className="mt-1 text-sm" placeholder="0" />
-            {pErrors.price && <span role="alert" className="mt-1 block text-xs font-medium text-red-700">{pErrors.price}</span>}
+            <MoneyInput required valueCents={productDraft.priceCents} invalid={!!pErrors.priceCents} onChange={cents => setProductDraft({ ...productDraft, priceCents: cents })} className="mt-1 text-sm" placeholder="0" />
+            {pErrors.priceCents && <span role="alert" className="mt-1 block text-xs font-medium text-red-700">{pErrors.priceCents}</span>}
             <span className="mt-1 block text-xs font-normal text-gray-500">Se carga al elegir el producto en una cotización y puede ajustarse allí sin modificar el catálogo.</span>
           </label>
           <div className="flex justify-end gap-2 pt-2">

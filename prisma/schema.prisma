@@ -48,6 +48,8 @@ model User {
   active             Boolean      @default(true)
   twoFactorEnabled   Boolean      @default(false)
   twoFactorSecret    String?
+  // Job title printed under the signature of staff documents (quotes).
+  jobTitle           String?
   // Billing identity of customers: legal name and NIT / cedula are optional.
   businessName       String?
   taxId              String?
@@ -271,8 +273,9 @@ model Tax {
 model Quote {
   id               String      @id @default(cuid())
   number           Int         @unique @default(autoincrement())
-  customerId       String
-  customer         User        @relation("QuoteCustomer", fields: [customerId], references: [id])
+  // Null when the quote was issued to a customer that is not registered (free-text name).
+  customerId       String?
+  customer         User?       @relation("QuoteCustomer", fields: [customerId], references: [id])
   // Customer and company data as they were when the quote was issued.
   customerSnapshot Json
   companySnapshot  Json

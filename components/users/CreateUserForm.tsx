@@ -17,6 +17,7 @@ export default function CreateUserForm() {
     password: '',
     role: 'AGENT',
     phone: '',
+    jobTitle: '',
     location: '',
     avatar: '',
     dailyEntryGoal: null as number | null,
@@ -145,6 +146,21 @@ export default function CreateUserForm() {
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             placeholder="+1 234 567 8900"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Cargo (Opcional)
+          </label>
+          <input
+            type="text"
+            maxLength={100}
+            value={formData.jobTitle}
+            onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            placeholder="Asistente administrativa y contable"
+          />
+          <p className="text-sm text-gray-500 mt-1">Se imprime en la firma de las cotizaciones que cree este usuario</p>
         </div>
 
         <div>

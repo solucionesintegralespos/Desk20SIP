@@ -2,10 +2,11 @@
 
 ## Despliegue
 
-1. Aplicar `supabase/migrations/202611040001_accounting_quotes_billing.sql` en la base de datos (Supabase SQL editor o `psql -f`). Es aditiva e idempotente: agrega el valor `ACCOUNTING` al tipo `UserRole`, las columnas `businessName`, `taxId` y `billingStartNumber` en `User`, y las tablas `Product`, `Tax`, `Quote`, `QuoteItem`, `BillingTemplate`, `BillingAccount` y `CustomerBillingSequence`. Siembra el impuesto `IVA 19%` si no existe ninguno.
+1. Aplicar `supabase/migrations/202611040001_accounting_quotes_billing.sql` y luego `supabase/migrations/202611050001_accounting_adjustments.sql` (cargo del usuario y cotizaciones a clientes no registrados) en la base de datos (Supabase SQL editor o `psql -f`). Es aditiva e idempotente: agrega el valor `ACCOUNTING` al tipo `UserRole`, las columnas `businessName`, `taxId` y `billingStartNumber` en `User`, y las tablas `Product`, `Tax`, `Quote`, `QuoteItem`, `BillingTemplate`, `BillingAccount` y `CustomerBillingSequence`. Siembra el impuesto `IVA 19%` si no existe ninguno.
    En entornos sin migraciones manuales también sirve `npm run prisma:push` (misma estructura; el IVA se crea al abrir el catálogo por primera vez).
 2. `npm run prisma:generate` durante la compilación (ya forma parte del build en Vercel) y `npm run build`.
-3. Configuración > Información General: completar NIT, teléfono, sitio web, dirección, ciudad, condiciones de las cotizaciones, instrucciones de pago y nota legal de las cuentas de cobro. El logo configurado (PNG/JPG local) se imprime en los documentos.
+3. Configuración > Información General: completar razón social, NIT y página web (encabezado de las cotizaciones), correo y teléfono (pie de página), dirección, ciudad y condiciones de las cotizaciones. En la sección Cuentas de cobro: nombre, CC/NIT e información para transferencias del emisor (si se dejan vacíos se usan la razón social y el NIT). El logo configurado (PNG/JPG local) se imprime en las cotizaciones; las cuentas de cobro usan un formato minimalista en blanco y negro sin logo.
+   Cada usuario del personal puede registrar su cargo y teléfono en Mi perfil: nombre, cargo, correo y teléfono firman las cotizaciones que crea.
 4. `APP_PUBLIC_URL` (o `NEXTAUTH_URL`) debe ser accesible para los clientes: los enlaces públicos de las cuentas de cobro y los botones de los correos se construyen con esa URL.
 
 ## Rol Contabilidad
@@ -21,7 +22,7 @@
 
 ## Documentos
 
-- Cotizaciones y cuentas de cobro se generan con jsPDF (`lib/accounting/quote-pdf.ts`, `lib/accounting/billing-pdf.ts`) con el mismo membrete de las órdenes de servicio. La vista previa del navegador, la descarga, el adjunto del correo y el enlace público usan la misma función.
+- Las cotizaciones se generan con jsPDF (`lib/accounting/quote-pdf.ts`) con el membrete de las órdenes de servicio; las cuentas de cobro (`lib/accounting/billing-pdf.ts`) siguen el formato de referencia en blanco y negro. Una cotización puede emitirse a un cliente no registrado escribiendo su nombre (queda sin correo para envío). La vista previa del navegador, la descarga, el adjunto del correo y el enlace público usan la misma función.
 - Cada cuenta guarda un snapshot (cliente, empresa, concepto, valor en letras, fechas) y el PDF generado en el momento de la emisión. Las cotizaciones guardan snapshots del cliente, de la empresa y de cada línea (nombre, precio editado).
 - Enlace público: `/api/public/billing/<token>` con un token aleatorio de 32 bytes; se puede regenerar o desactivar desde la lista de cuentas.
 

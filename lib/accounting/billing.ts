@@ -119,7 +119,8 @@ export async function issueBillingAccount(input: IssueInput, profile?: CompanyPr
     const dueAt = company.billingDueDays > 0 ? new Date(issuedAt.getTime() + company.billingDueDays * 86400000) : null
     const snapshot: BillingSnapshot = {
       customer: customerSnapshot(customer),
-      company: { ...docCompany(company), paymentInfo: company.billingPaymentInfo, legalNote: company.billingLegalNote },
+      // Cuentas de cobro are issued under the billing identity configured in Settings (name, CC/NIT, transfer details).
+      company: { ...docCompany(company), name: company.billingName, nit: company.billingTaxId, paymentInfo: company.billingPaymentInfo, legalNote: company.billingLegalNote },
       concept: input.concept.trim(), totalCents: input.totalCents, amountInWords: amountInWords(input.totalCents),
       period: input.period || null, issuedAt: issuedAt.toISOString(), dueAt: dueAt ? dueAt.toISOString() : null,
       templateId: input.templateId || null, logoUrl: company.logoUrl,

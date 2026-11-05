@@ -44,6 +44,7 @@ function matches(table, row, where) {
     if ('equals' in cond) return cond.mode === 'insensitive' ? String(value ?? '').toLowerCase() === String(cond.equals).toLowerCase() : same(value, cond.equals);
     if ('contains' in cond) return String(value ?? '').toLowerCase().includes(String(cond.contains).toLowerCase());
     if ('startsWith' in cond) return String(value ?? '').startsWith(cond.startsWith);
+    if ('path' in cond) { const nested = (cond.path || []).reduce((acc, part) => acc?.[part], value); return 'string_contains' in cond ? String(nested ?? '').includes(cond.string_contains) : same(nested, cond.equals); }
     if ('not' in cond) return !same(value, cond.not);
     let ok = true;
     if ('gte' in cond) ok = ok && value >= cond.gte;
@@ -122,6 +123,7 @@ function model(table) {
     findUniqueOrThrow: async args => { const row = find(args.where)[0]; if (!row) throw new Prisma.PrismaClientKnownRequestError('Record not found', { code: 'P2025', clientVersion: 'test' }); return project(table, row, args); },
     findFirstOrThrow: async args => { const row = orderRows(find(args?.where), args?.orderBy)[0]; if (!row) throw new Prisma.PrismaClientKnownRequestError('Record not found', { code: 'P2025', clientVersion: 'test' }); return project(table, row, args); },
     count: async args => find(args?.where).length,
+    aggregate: async args => { const rows = find(args?.where); const out = {}; if (args?._count) out._count = { _all: rows.length }; if (args?._sum) out._sum = Object.fromEntries(Object.keys(args._sum).map(key => [key, rows.length ? rows.reduce((sum, row) => sum + Number(row[key] || 0), 0) : null])); return out; },
     create: async args => {
       const row = { ...defaults(), ...(table === 'quote' ? { number: tables.quote.length + 1 } : {}), ...(table === 'product' || table === 'tax' || table === 'billingTemplate' ? { active: true } : {}), ...(table === 'billingAccount' ? { status: 'ISSUED', publicEnabled: true, issuedAt: new Date() } : {}) };
       applyData(table, row, args.data);
@@ -174,6 +176,7 @@ const taxes = require('../app/api/taxes/route.ts');
 const quotes = require('../app/api/quotes/route.ts');
 const quoteById = require('../app/api/quotes/[id]/route.ts');
 const quotePdf = require('../app/api/quotes/[id]/pdf/route.ts');
+const quoteEmail = require('../app/api/quotes/[id]/email/route.ts');
 const billing = require('../app/api/billing/route.ts');
 const billingById = require('../app/api/billing/[id]/route.ts');
 const billingLink = require('../app/api/billing/[id]/link/route.ts');
@@ -187,7 +190,7 @@ const ctx = id => ({ params: { id, token: id } });
 
 tables.user.push(
   { id: 'admin', name: 'Admin', email: 'admin@test', role: 'ADMIN', active: true },
-  { id: 'accounting', name: 'Conta', email: 'conta@test', role: 'ACCOUNTING', active: true },
+  { id: 'accounting', name: 'Conta', email: 'conta@test', role: 'ACCOUNTING', active: true, jobTitle: 'Asistente contable', phone: '317 000 0000' },
   { id: 'agent', name: 'Agente', email: 'agent@test', role: 'AGENT', active: true },
   { id: 'customer-a', name: 'Cliente A', email: 'a@test', role: 'CUSTOMER', active: true, businessName: 'A SAS', taxId: '900.1', billingStartNumber: 1, emailNotifications: true },
   { id: 'customer-b', name: 'Cliente B', email: null, role: 'CUSTOMER', active: true, businessName: null, taxId: null, billingStartNumber: 50, emailNotifications: true },
@@ -243,6 +246,22 @@ tables.user.push(
   const stored = await (await quoteById.GET(json(`/api/quotes/${quote.id}`, 'GET'), ctx(quote.id))).json();
   assert.equal(stored.items[0].name, 'Impresora POS'); assert.equal(stored.items[0].unitPrice, 500000);
   const list = await (await quotes.GET(json('/api/quotes?q=COT-0001', 'GET'))).json(); assert.equal(list.total, 1);
+  // Signer: the user who created the quote (name, job title, email, phone) is frozen with the document.
+  assert.deepEqual(stored.issuer, { id: 'accounting', name: 'Conta', jobTitle: 'Asistente contable', email: 'conta@test', phone: '317 000 0000' });
+  assert.equal(stored.registered, true);
+  // Unregistered customer: a typed name is enough; no customer row, no email to send to.
+  response = await quotes.POST(json('/api/quotes', 'POST', { customerName: 'Tienda Nueva', taxId: null, items: [{ name: 'Visita', quantity: 1, unitPrice: 50000 }] }));
+  assert.equal(response.status, 201); const free = await response.json();
+  assert.equal(free.customerId, null); assert.equal(free.registered, false); assert.equal(free.customer.name, 'Tienda Nueva'); assert.equal(free.customer.email, null);
+  assert.equal((await quotePdf.GET(json(`/api/quotes/${free.id}/pdf`, 'GET'), ctx(free.id))).status, 200);
+  assert.equal((await quotes.POST(json('/api/quotes', 'POST', { customerName: '   ', items: [{ name: 'x', quantity: 1, unitPrice: 1 }] }))).status, 400, 'a name or a customer is required');
+  // Unregistered customer with an email: the quote can be sent to it; without one it is skipped.
+  let sent = await (await quoteEmail.POST(json(`/api/quotes/${free.id}/email`, 'POST'), ctx(free.id))).json(); assert.equal(sent.email.status, 'skipped');
+  response = await quotes.POST(json('/api/quotes', 'POST', { customerName: 'Tienda con correo', customerEmail: 'Tienda@Ejemplo.com', items: [{ name: 'Visita', quantity: 1, unitPrice: 50000 }] }));
+  const withEmail = await response.json(); assert.equal(withEmail.customer.email, 'tienda@ejemplo.com');
+  sent = await (await quoteEmail.POST(json(`/api/quotes/${withEmail.id}/email`, 'POST'), ctx(withEmail.id))).json(); assert.equal(sent.email.status, 'sent'); assert.equal(sent.email.recipient, 'tienda@ejemplo.com');
+  assert.equal((await quotes.POST(json('/api/quotes', 'POST', { customerName: 'Mal correo', customerEmail: 'no-es-correo', items: [{ name: 'x', quantity: 1, unitPrice: 1 }] }))).status, 400);
+  assert.equal((await (await quotes.GET(json('/api/quotes?q=Tienda', 'GET'))).json()).total, 2, 'unregistered names are searchable');
   const pdf = await quotePdf.GET(json(`/api/quotes/${quote.id}/pdf`, 'GET'), ctx(quote.id));
   assert.equal(pdf.headers.get('Content-Type'), 'application/pdf'); assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
   assert.equal((await quoteById.GET(json('/api/quotes/nope', 'GET'), ctx('nope'))).status, 404);
@@ -279,6 +298,8 @@ tables.user.push(
   const voided = await (await billingById.GET(json(`/api/billing/${account.id}`, 'GET'), ctx(account.id))).json(); assert.equal(voided.status, 'VOID'); assert.equal(voided.numberLabel, '01');
   const third = await (await billing.POST(json('/api/billing', 'POST', { customerId: 'customer-a', concept: 'Tras anular', total: 1 }))).json(); assert.equal(third.numberLabel, '03', 'voided numbers are not reused');
   const accounts = await (await billing.GET(json('/api/billing?customer=customer-a', 'GET'))).json(); assert.equal(accounts.total, 3);
+  // Totals of the filtered list: voided accounts are counted apart and excluded from the issued amount.
+  assert.deepEqual(accounts.totals, { count: 3, issuedCount: 2, voidCount: 1, issuedCents: 200, voidCents: 17600000 });
   assert.ok(accounts.accounts.every(item => /^\d+$/.test(item.numberLabel)));
 
   // Recurring templates: no numbers consumed until generated, one per period, selectable generation with per-item results.

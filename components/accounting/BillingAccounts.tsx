@@ -12,7 +12,8 @@ import { api, type CustomerOption } from './api'
 import type { SerializedAccount } from '@/lib/accounting/billing'
 import { formatMoney, formatShortDateCO, formatDateCO, periodLabel } from '@/lib/accounting/format'
 
-type ListResponse = { accounts: SerializedAccount[]; total: number; page: number; perPage: number }
+type Totals = { count: number; issuedCount: number; voidCount: number; issuedCents: number; voidCents: number }
+type ListResponse = { accounts: SerializedAccount[]; total: number; page: number; perPage: number; totals?: Totals }
 type EmailResult = { status: 'sent' | 'failed' | 'skipped'; recipient: string | null; message: string }
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm'
 
@@ -100,6 +101,9 @@ export default function BillingAccounts() {
     try { await navigator.clipboard.writeText(text); toast.success('Enlace copiado') } catch { toast.error('No se pudo copiar. Selecciona el enlace y cópialo manualmente.') }
   }
 
+  const totals = data?.totals
+  const totalsPending = loading && !data
+  const skeleton = <span className="inline-block h-7 w-20 animate-pulse rounded bg-gray-200" aria-label="Cargando" />
   const statusPill = (account: SerializedAccount) => account.status === 'VOID'
     ? <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">Anulada</span>
     : <span className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">Emitida</span>
@@ -143,6 +147,17 @@ export default function BillingAccounts() {
         {hasFilters && <button type="button" onClick={() => { setSearch(''); router.push(pathname) }} className="text-sm font-medium text-primary-600 hover:text-primary-700">Limpiar filtros</button>}
       </div>
     </div>
+
+    {/* Totals over every account matching the current filters, not only this page. */}
+    <section aria-label="Totales del filtro actual" className="mb-6">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-500">Totales del filtro actual</p>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="rounded-lg bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Cuentas</p><p className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">{totalsPending ? skeleton : String(totals?.count ?? 0)}</p></div>
+        <div className="rounded-lg bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Emitidas</p><p className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">{totalsPending ? skeleton : String(totals?.issuedCount ?? 0)}</p><p className="text-xs text-gray-500 tabular-nums">{totalsPending ? '—' : formatMoney(totals?.issuedCents ?? 0)}</p></div>
+        <div className="rounded-lg bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Anuladas</p><p className="mt-1 text-2xl font-bold text-gray-500 tabular-nums">{totalsPending ? skeleton : String(totals?.voidCount ?? 0)}</p><p className="text-xs text-gray-400 tabular-nums">{totalsPending ? '—' : formatMoney(totals?.voidCents ?? 0)}</p></div>
+        <div className="rounded-lg border-l-4 border-primary-600 bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Total emitido</p><p className="mt-1 text-2xl font-bold text-primary-700 tabular-nums">{totalsPending ? skeleton : formatMoney(totals?.issuedCents ?? 0)}</p><p className="text-xs text-gray-500">Sin incluir cuentas anuladas</p></div>
+      </div>
+    </section>
 
     {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error} <button type="button" onClick={() => void load()} className="ml-2 underline">Reintentar</button></p>}
     {loading && !data ? <div className="rounded-lg bg-white p-12 text-center text-gray-500 shadow">Cargando cuentas de cobro…</div>

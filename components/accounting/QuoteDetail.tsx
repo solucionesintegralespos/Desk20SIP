@@ -40,7 +40,10 @@ export default function QuoteDetail({ id }: { id: string }) {
   if (!quote) return <div className="bg-white rounded-lg shadow p-12 text-center text-gray-500">Cargando cotización…</div>
 
   const customer = quote.customer
+  const registered = quote.registered
   const canEmail = !!customer.email
+  const issuer = quote.issuer
+  const noEmailReason = 'La cotización no tiene un correo de destino'
 
   return <>
     <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
@@ -48,16 +51,19 @@ export default function QuoteDetail({ id }: { id: string }) {
         <Link href="/dashboard/quotes" className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-2"><ArrowLeft className="h-4 w-4 mr-1" /> Volver a cotizaciones</Link>
         <h1 className="text-3xl font-bold text-gray-900">{quote.title} {quote.numberLabel}</h1>
         <p className="text-gray-600 mt-1">Creada el {formatDateTimeCO(quote.createdAt)}</p>
+        {issuer && <p className="text-xs text-gray-500 mt-1">Firma: {[issuer.name, issuer.jobTitle, issuer.email, issuer.phone].filter(Boolean).join(' · ')}</p>}
       </div>
       <div className="flex flex-wrap gap-2">
         <a href={`/api/quotes/${encodeURIComponent(id)}/pdf`} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"><Download className="h-4 w-4" /> Descargar PDF</a>
-        <button type="button" onClick={() => setConfirming(true)} disabled={!canEmail || sending} title={canEmail ? `Enviar a ${customer.email}` : 'El cliente no tiene correo registrado'}
+        <button type="button" onClick={() => setConfirming(true)} disabled={!canEmail || sending} title={canEmail ? `Enviar a ${customer.email}` : noEmailReason}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
           <Mail className="h-4 w-4" /> Enviar por correo
         </button>
       </div>
     </div>
-    {!canEmail && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">El cliente no tiene correo registrado. Agrégalo en <Link href={`/dashboard/customers/${customer.id}`} className="underline">Clientes</Link> para poder enviar la cotización.</p>}
+    {!canEmail && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{registered && customer.id
+      ? <>El cliente no tiene correo registrado. Agrégalo en <Link href={`/dashboard/customers/${customer.id}`} className="underline">Clientes</Link> para poder enviar la cotización.</>
+      : 'La cotización no tiene correo de destino: puede descargarse en PDF. Para enviarla por correo, crea una nueva indicando el correo del cliente.'}</p>}
 
     <div className="grid gap-6 xl:grid-cols-2">
       <div className="space-y-5">
@@ -65,8 +71,8 @@ export default function QuoteDetail({ id }: { id: string }) {
           <h2 className="font-semibold text-gray-900 mb-3">Cliente</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
             <div><dt className="text-gray-500">Nombre</dt><dd className="font-medium text-gray-900">{customer.name}</dd></div>
-            <div><dt className="text-gray-500">Razón social</dt><dd className="font-medium text-gray-900">{quote.snapshotCustomer.businessName || 'No registrada'}</dd></div>
-            <div><dt className="text-gray-500">NIT / C.C.</dt><dd className="font-medium text-gray-900">{quote.snapshotCustomer.taxId || 'No registrado'}</dd></div>
+            <div><dt className="text-gray-500">Razón social</dt><dd className="font-medium text-gray-900">{quote.snapshotCustomer.businessName || '—'}</dd></div>
+            <div><dt className="text-gray-500">NIT / C.C.</dt><dd className="font-medium text-gray-900">{quote.snapshotCustomer.taxId || '—'}</dd></div>
             <div><dt className="text-gray-500">Correo</dt><dd className="font-medium text-gray-900">{customer.email || 'Sin correo'}</dd></div>
             <div><dt className="text-gray-500">Teléfono</dt><dd className="font-medium text-gray-900">{quote.snapshotCustomer.phone || '—'}</dd></div>
             <div><dt className="text-gray-500">Dirección</dt><dd className="font-medium text-gray-900">{[quote.snapshotCustomer.address, quote.snapshotCustomer.city].filter(Boolean).join(', ') || '—'}</dd></div>

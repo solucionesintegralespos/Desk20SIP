@@ -20,6 +20,7 @@ interface User {
   dailyClosureGoal: number | null
   role: UserRole
   phone: string | null
+  jobTitle?: string | null
   location: string | null
   active: boolean
   createdAt: Date
@@ -98,6 +99,7 @@ export default function UsersTable({ users, currentRole, currentUserId }: UsersT
                     <h3 className="font-semibold text-gray-900">
                       {user.name || 'Sin nombre'}
                     </h3>
+                    {user.jobTitle && <p className="text-xs text-gray-500">{user.jobTitle}</p>}
                     <div className="flex flex-wrap gap-1">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${roleColors[user.role]}`}>
                         {roleLabels[user.role]}
