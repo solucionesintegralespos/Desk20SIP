@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Plus, Download, Eye, FileText, Search, Mail, Loader2 } from 'lucide-react'
+import { Plus, Download, Eye, FileText, Search, Mail, Loader2, Copy } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api, type CustomerOption } from './api'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/support/ui'
@@ -153,6 +153,7 @@ export default function QuotesList() {
                     <div className="flex items-center gap-1">
                       <Link href={`/dashboard/quotes/${quote.id}`} title="Ver cotización" aria-label={`Ver ${quote.numberLabel}`} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-primary-600"><Eye className="h-4 w-4" /></Link>
                       <a href={`/api/quotes/${quote.id}/pdf`} title="Descargar PDF" aria-label={`Descargar PDF de ${quote.numberLabel}`} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-primary-600"><Download className="h-4 w-4" /></a>
+                      <Link href={`/dashboard/quotes/new?from=${quote.id}`} title="Duplicar en una cotización nueva" aria-label={`Duplicar ${quote.numberLabel}`} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-primary-600"><Copy className="h-4 w-4" /></Link>
                       <button type="button" onClick={() => setEmailing(quote)} disabled={!quote.customer.email} title={quote.customer.email ? `Enviar por correo a ${quote.customer.email}` : 'La cotización no tiene correo de destino'} aria-label={`Enviar ${quote.numberLabel} por correo`} className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-primary-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"><Mail className="h-4 w-4" /></button>
                     </div>
                   </td>

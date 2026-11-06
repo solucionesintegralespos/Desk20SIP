@@ -22,10 +22,15 @@ type Line = { key: string; productId: string | null; name: string; description: 
 const inputClass = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500'
 const newLine = (): Line => ({ key: clientId(), productId: null, name: '', description: '', quantity: '1', unitPriceCents: 0 })
 
-/** Creates a quote, or edits an existing one when `quoteId` is given (same number, new content). */
-export default function QuoteEditor({ quoteId }: { quoteId?: string } = {}) {
+/**
+ * Creates a quote, edits an existing one when `quoteId` is given (same number, new content),
+ * or starts a new draft prefilled from another quote when `duplicateFrom` is given.
+ */
+export default function QuoteEditor({ quoteId, duplicateFrom }: { quoteId?: string; duplicateFrom?: string } = {}) {
   const router = useRouter()
   const editing = !!quoteId
+  const sourceId = quoteId || duplicateFrom
+  const [sourceLabel, setSourceLabel] = useState('')
   const [existing, setExisting] = useState<SerializedQuote | null>(null)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -50,13 +55,13 @@ export default function QuoteEditor({ quoteId }: { quoteId?: string } = {}) {
       api<Product[]>('/api/products?active=1'),
       api<Tax[]>('/api/taxes?active=1'),
       api<CompanyBranding>('/api/documents/branding'),
-      quoteId ? api<SerializedQuote>(`/api/quotes/${encodeURIComponent(quoteId)}`) : Promise.resolve(null),
+      sourceId ? api<SerializedQuote>(`/api/quotes/${encodeURIComponent(sourceId)}`) : Promise.resolve(null),
     ]).then(([customerList, productList, taxList, brand, quote]) => {
       if (cancelled) return
       setCustomers(customerList); setProducts(productList.filter(p => p.active)); setTaxes(taxList.filter(t => t.active)); setBranding(brand)
       if (quote) {
-        // Edit mode: prefill everything from the stored quote (lines keep their product link and edited prices).
-        setExisting(quote)
+        // Edit or duplicate: prefill everything from the stored quote (lines keep their product link and edited prices).
+        if (quoteId) setExisting(quote); else setSourceLabel(quote.numberLabel)
         const registered = quote.registered && quote.customerId && customerList.some(c => c.id === quote.customerId)
         const option = registered ? customerList.find(c => c.id === quote.customerId) : null
         setCustomerPick(option ? { id: option.id, query: option.businessName || option.name || option.email || 'Cliente' } : { id: '', query: quote.customer.name })
@@ -73,7 +78,7 @@ export default function QuoteEditor({ quoteId }: { quoteId?: string } = {}) {
     }).catch(e => { if (!cancelled) setLoadError((e as Error).message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [quoteId])
+  }, [quoteId, sourceId])
 
   const customerId = customerPick.id
   const customer = customers.find(c => c.id === customerId) || null
@@ -141,7 +146,7 @@ export default function QuoteEditor({ quoteId }: { quoteId?: string } = {}) {
       <div>
         <Link href="/dashboard/quotes" className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-2"><ArrowLeft className="h-4 w-4 mr-1" /> Volver a cotizaciones</Link>
         <h1 className="text-3xl font-bold text-gray-900">{editing ? `Editar cotización ${existing?.numberLabel || ''}` : 'Nueva cotización'}</h1>
-        <p className="text-gray-600 mt-1">{editing ? 'Los cambios reemplazan el contenido de la cotización; conserva su número y fecha' : 'El documento se previsualiza a medida que lo construyes'}</p>
+        <p className="text-gray-600 mt-1">{editing ? 'Los cambios reemplazan el contenido de la cotización; conserva su número y fecha' : sourceLabel ? `Borrador creado a partir de ${sourceLabel}: ajusta cliente, productos o precios y guarda para emitir una cotización nueva` : 'El documento se previsualiza a medida que lo construyes'}</p>
       </div>
       <div className="flex gap-2">
         <Link href={editing ? `/dashboard/quotes/${quoteId}` : '/dashboard/quotes'} className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Cancelar</Link>

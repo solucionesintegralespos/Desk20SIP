@@ -13,7 +13,7 @@
 
 `ACCOUNTING` tiene los accesos de un agente (tickets, programación, órdenes, checklists, clientes) más los módulos Catálogo, Cotizaciones y Cuentas de cobro. No es administrador: Reportes, Incentivos, Categorías, Usuarios y Configuración siguen siendo exclusivos de `ADMIN`, que tiene acceso a todo, incluidos los módulos contables. Las comprobaciones pasan por `isAdmin`, `isStaff` y `canUseAccounting` en `lib/roles.ts`.
 
-Las cotizaciones emitidas pueden editarse (botón Editar en el detalle): se reemplazan cliente, líneas, precios, impuesto y textos, conservando número, fecha y firmante; queda registrado en la auditoría como `quotes:updated`.
+Las cotizaciones emitidas pueden editarse (botón Editar en el detalle): se reemplazan cliente, líneas, precios, impuesto y textos, conservando número, fecha y firmante; queda registrado en la auditoría como `quotes:updated`. También pueden duplicarse (Duplicar en el detalle o en el listado, `/dashboard/quotes/new?from=<id>`): abre un borrador nuevo con el mismo cliente, productos, precios, impuesto y textos, que al guardarse recibe número, fecha y firmante propios.
 
 ## Numeración de cuentas de cobro
 
