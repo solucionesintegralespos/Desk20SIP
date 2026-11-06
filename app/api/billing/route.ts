@@ -5,6 +5,7 @@ import { accountingUser, serviceError, ServiceError, readJson } from '@/lib/acco
 import { occasionalSchema, issueBillingAccount, serializeAccount } from '@/lib/accounting/billing'
 import { toCents } from '@/lib/accounting/format'
 import { accountSelect } from '@/lib/accounting/billing-select'
+import { creatorsById } from '@/lib/accounting/creators'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 20
@@ -16,11 +17,13 @@ export async function GET(request: Request) {
     const q = (params.get('q') || '').trim().slice(0, 100)
     const customer = params.get('customer') || ''
     const status = params.get('status') || ''
+    const createdBy = (params.get('createdBy') || '').trim().slice(0, 100)
     const from = params.get('from') || '', to = params.get('to') || ''
     const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1)
     const where: Prisma.BillingAccountWhereInput = {
       ...(customer ? { customerId: customer } : {}),
       ...(status === 'ISSUED' || status === 'VOID' ? { status } : {}),
+      ...(createdBy ? { createdById: createdBy } : {}),
     }
     if (from || to) { const range = dailyRange(from, to); where.issuedAt = { gte: range.gte, lt: range.lt } }
     if (q) {
@@ -45,7 +48,8 @@ export async function GET(request: Request) {
       count: total, issuedCount: issued._count._all, voidCount: voided._count._all,
       issuedCents: Math.round(Number(issued._sum.total ?? 0) * 100), voidCents: Math.round(Number(voided._sum.total ?? 0) * 100),
     }
-    return Response.json({ accounts: accounts.map(serializeAccount), total, page, perPage: PER_PAGE, totals })
+    const creators = await creatorsById(accounts.map(account => account.createdById))
+    return Response.json({ accounts: accounts.map(account => ({ ...serializeAccount(account), createdBy: account.createdById ? creators[account.createdById] || null : null })), total, page, perPage: PER_PAGE, totals })
   } catch (error) { return serviceError(error) }
 }
 

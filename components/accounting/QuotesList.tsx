@@ -11,7 +11,10 @@ import Pagination from '@/components/tickets/Pagination'
 import { formatMoney, formatDateTimeCO } from '@/lib/accounting/format'
 import type { SerializedQuote } from '@/lib/accounting/quotes'
 
-type ListResponse = { quotes: SerializedQuote[]; total: number; page: number; perPage: number }
+type Creator = { id: string; name: string }
+type ListQuote = SerializedQuote & { createdBy?: Creator | null }
+type ListResponse = { quotes: ListQuote[]; total: number; page: number; perPage: number }
+type StaffOption = { id: string; name: string; email: string | null; active: boolean }
 type EmailResult = { status: 'sent' | 'skipped' | 'failed'; recipient: string | null; message: string }
 type Customer = Pick<CustomerOption, 'id' | 'name' | 'businessName' | 'taxId' | 'email'>
 
@@ -21,12 +24,14 @@ export default function QuotesList() {
   const searchParams = useSearchParams()
   const q = searchParams.get('q') || ''
   const customer = searchParams.get('customer') || ''
+  const createdBy = searchParams.get('createdBy') || ''
   const from = searchParams.get('from') || ''
   const to = searchParams.get('to') || ''
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
 
   const [searchTerm, setSearchTerm] = useState(q)
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [staff, setStaff] = useState<StaffOption[]>([])
   const [emailing, setEmailing] = useState<SerializedQuote | null>(null)
   const [sending, setSending] = useState(false)
 
@@ -49,6 +54,7 @@ export default function QuotesList() {
 
   useEffect(() => {
     api<Customer[]>('/api/customers').then(list => setCustomers(list)).catch(() => setCustomers([]))
+    api<StaffOption[]>('/api/documents/staff').then(list => setStaff(list)).catch(() => setStaff([]))
   }, [])
 
   const query = searchParams.toString()
@@ -74,7 +80,8 @@ export default function QuotesList() {
     router.push(`${pathname}${next ? `?${next}` : ''}`)
   }
   const updateFilter = (key: string, value: string) => navigate(params => { if (value) params.set(key, value); else params.delete(key) })
-  const hasFilters = !!(q || customer || from || to)
+  const hasFilters = !!(q || customer || createdBy || from || to)
+  const staffOptions = useMemo(() => staff.map(user => ({ id: user.id, label: user.name, description: [user.email, user.active ? '' : 'Inactivo'].filter(Boolean).join(' · ') || undefined })), [staff])
 
   const customerOptions = useMemo(() => customers.map(c => ({ id: c.id, label: c.businessName || c.name || c.email || 'Sin nombre', description: [c.name !== c.businessName ? c.name : '', c.taxId ? `NIT/CC ${c.taxId}` : '', c.email].filter(Boolean).join(' · ') || undefined })), [customers])
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.perPage)) : 1
@@ -101,6 +108,10 @@ export default function QuotesList() {
         <div className="w-full md:w-72">
           <span className="block text-sm font-medium text-gray-700 mb-1">Cliente</span>
           <SearchSelect aria-label="Cliente" placeholder="Buscar cliente…" emptyOption="Todos los clientes" value={customer} onChange={id => updateFilter('customer', id)} options={customerOptions} />
+        </div>
+        <div className="w-full md:w-60">
+          <span className="block text-sm font-medium text-gray-700 mb-1">Creada por</span>
+          <SearchSelect aria-label="Creada por" placeholder="Buscar usuario…" emptyOption="Todos los usuarios" value={createdBy} onChange={id => updateFilter('createdBy', id)} options={staffOptions} />
         </div>
         <div className="flex items-end gap-2">
           <label className="text-sm font-medium text-gray-700">Desde
@@ -141,7 +152,7 @@ export default function QuotesList() {
                   <td className="px-4 py-3 whitespace-nowrap">
                     <Link href={`/dashboard/quotes/${quote.id}`} className="text-primary-600 font-medium hover:underline">{quote.numberLabel}</Link>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{formatDateTimeCO(quote.createdAt)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{formatDateTimeCO(quote.createdAt)}{quote.createdBy && <div className="text-xs text-gray-500">por {quote.createdBy.name}</div>}</td>
                   <td className="px-4 py-3">
                     <div className="text-sm font-medium text-gray-900">{quote.customer.businessName || quote.customer.name}</div>
                     <div className="text-xs text-gray-500">{[quote.customer.businessName && quote.customer.businessName !== quote.customer.name ? quote.customer.name : '', quote.customer.taxId ? `NIT/CC ${quote.customer.taxId}` : '', quote.customer.email || ''].filter(Boolean).join(' · ')}</div>

@@ -13,7 +13,10 @@ import type { SerializedAccount } from '@/lib/accounting/billing'
 import { formatMoney, formatShortDateCO, formatDateCO, periodLabel } from '@/lib/accounting/format'
 
 type Totals = { count: number; issuedCount: number; voidCount: number; issuedCents: number; voidCents: number }
-type ListResponse = { accounts: SerializedAccount[]; total: number; page: number; perPage: number; totals?: Totals }
+type Creator = { id: string; name: string }
+type ListAccount = SerializedAccount & { createdBy?: Creator | null }
+type ListResponse = { accounts: ListAccount[]; total: number; page: number; perPage: number; totals?: Totals }
+type StaffOption = { id: string; name: string; email: string | null; active: boolean }
 type EmailResult = { status: 'sent' | 'failed' | 'skipped'; recipient: string | null; message: string }
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm'
 
@@ -21,7 +24,7 @@ export default function BillingAccounts() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const q = searchParams.get('q') || '', customer = searchParams.get('customer') || '', status = searchParams.get('status') || ''
+  const q = searchParams.get('q') || '', customer = searchParams.get('customer') || '', status = searchParams.get('status') || '', createdBy = searchParams.get('createdBy') || ''
   const from = searchParams.get('from') || '', to = searchParams.get('to') || ''
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
   const highlight = searchParams.get('new') || ''
@@ -33,6 +36,8 @@ export default function BillingAccounts() {
   const [search, setSearch] = useState(q)
   const [viewing, setViewing] = useState<SerializedAccount | null>(null)
   const [emailing, setEmailing] = useState<SerializedAccount | null>(null)
+  const [staff, setStaff] = useState<StaffOption[]>([])
+  useEffect(() => { api<StaffOption[]>('/api/documents/staff').then(list => setStaff(list)).catch(() => setStaff([])) }, [])
   const [linking, setLinking] = useState<SerializedAccount | null>(null)
   const [voiding, setVoiding] = useState<SerializedAccount | null>(null)
   const [voidReason, setVoidReason] = useState('')
@@ -61,7 +66,7 @@ export default function BillingAccounts() {
     router.push(`${pathname}${next ? `?${next}` : ''}`)
   }
   const setFilter = (key: string, value: string) => navigate(params => { if (value) params.set(key, value); else params.delete(key) })
-  const hasFilters = !!(q || customer || status || from || to)
+  const hasFilters = !!(q || customer || status || createdBy || from || to)
 
   const refreshRow = (updated: SerializedAccount) => {
     setData(current => current ? { ...current, accounts: current.accounts.map(a => a.id === updated.id ? updated : a) } : current)
@@ -136,6 +141,8 @@ export default function BillingAccounts() {
         <div className="hidden items-center gap-2 text-gray-700 md:flex"><Filter className="h-5 w-5" /><span className="font-medium">Filtros:</span></div>
         <SearchSelect aria-label="Cliente" className="w-full md:w-64" placeholder="Buscar cliente…" emptyOption="Todos los clientes" value={customer} onChange={id => setFilter('customer', id)}
           options={customers.map(c => ({ id: c.id, label: c.businessName || c.name, description: [c.taxId, c.email].filter(Boolean).join(' · ') || undefined }))} />
+        <SearchSelect aria-label="Generada por" className="w-full md:w-56" placeholder="Buscar usuario…" emptyOption="Todos los usuarios" value={createdBy} onChange={id => setFilter('createdBy', id)}
+          options={staff.map(user => ({ id: user.id, label: user.name, description: [user.email, user.active ? '' : 'Inactivo'].filter(Boolean).join(' · ') || undefined }))} />
         <select aria-label="Estado" value={status} onChange={e => setFilter('status', e.target.value)} className="w-full md:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
           <option value="">Todos los estados</option><option value="ISSUED">Emitidas</option><option value="VOID">Anuladas</option>
         </select>
@@ -171,7 +178,7 @@ export default function BillingAccounts() {
             <tbody className="divide-y divide-gray-200 bg-white">
               {data.accounts.map(account => <tr key={account.id} className={`align-top ${highlight === account.id ? 'bg-primary-50' : 'hover:bg-gray-50'}`}>
                 <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-primary-600 tabular-nums">{account.numberLabel}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{formatShortDateCO(account.issuedAt)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{formatShortDateCO(account.issuedAt)}{account.createdBy && <div className="text-xs text-gray-500">por {account.createdBy.name}</div>}</td>
                 <td className="px-4 py-3 text-sm"><div className="font-medium text-gray-900">{account.customer.businessName || account.customer.name}</div>{account.customer.taxId && <div className="text-xs text-gray-500">NIT/CC {account.customer.taxId}</div>}</td>
                 <td className="max-w-xs px-4 py-3 text-sm text-gray-700"><span className="line-clamp-2" title={account.concept}>{account.concept}</span></td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{account.period ? periodLabel(account.period) : 'Ocasional'}</td>

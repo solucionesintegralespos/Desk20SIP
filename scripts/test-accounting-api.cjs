@@ -249,6 +249,9 @@ tables.user.push(
   const stored = await (await quoteById.GET(json(`/api/quotes/${quote.id}`, 'GET'), ctx(quote.id))).json();
   assert.equal(stored.items[0].name, 'Impresora POS'); assert.equal(stored.items[0].unitPrice, 500000);
   const list = await (await quotes.GET(json('/api/quotes?q=COT-0001', 'GET'))).json(); assert.equal(list.total, 1);
+  assert.equal(list.quotes[0].createdBy.name, 'Conta', 'creator name attached to each row');
+  assert.equal((await (await quotes.GET(json('/api/quotes?createdBy=accounting', 'GET'))).json()).total, 2);
+  assert.equal((await (await quotes.GET(json('/api/quotes?createdBy=admin', 'GET'))).json()).total, 0);
   // Editing replaces lines, totals and customer; number, date and signer are kept.
   response = await quoteById.PUT(json(`/api/quotes/${quote.id}`, 'PUT', { customerId: 'customer-b', taxId: null, notes: 'Editada', items: [{ name: 'Nuevo ítem', quantity: 2, unitPrice: 1000 }] }), ctx(quote.id));
   assert.equal(response.status, 200); const edited = await response.json();
@@ -313,6 +316,9 @@ tables.user.push(
   const accounts = await (await billing.GET(json('/api/billing?customer=customer-a', 'GET'))).json(); assert.equal(accounts.total, 3);
   // Totals of the filtered list: voided accounts are counted apart and excluded from the issued amount.
   assert.deepEqual(accounts.totals, { count: 3, issuedCount: 2, voidCount: 1, issuedCents: 200, voidCents: 17600000 });
+  assert.equal(accounts.accounts[0].createdBy.name, 'Conta');
+  assert.equal((await (await billing.GET(json('/api/billing?createdBy=admin', 'GET'))).json()).total, 0);
+  assert.equal((await (await billing.GET(json('/api/billing?createdBy=accounting', 'GET'))).json()).totals.count, 4);
   assert.ok(accounts.accounts.every(item => /^\d+$/.test(item.numberLabel)));
 
   // Recurring templates: no numbers consumed until generated, one per period, selectable generation with per-item results.
