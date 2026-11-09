@@ -13,9 +13,21 @@ export const eventSchema = z.object({
   start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   status: z.enum(['planned', 'in_progress', 'completed', 'vacation', 'available', 'permission', 'medical']),
   description: z.string().max(5000),
+  // Pasajes (travel fare) of the event, in cents; null when the event has none.
+  fareCents: z.number().int().min(0).max(99999999999).nullable().optional(),
+  fareReason: z.string().trim().max(300).optional(),
 });
 
-export type ScheduleEvent = z.infer<typeof eventSchema> & { id: string; revision: number };
+// Fare lifecycle: entered on the event (pending) → accepted or removed from the report →
+// paid in bulk "until a date". Status and payment date are set by the server only.
+export type FareStatus = 'pending' | 'accepted' | 'paid';
+export const fareStatusLabels: Record<FareStatus, string> = { pending: 'Pendiente', accepted: 'Aceptado', paid: 'Pagado' };
+export const FARES_PAID_UNTIL_KEY = 'fares_paid_until';
+/** Events on or before the paid-until date cannot change their fare. */
+export const fareLocked = (date: string, paidUntil: string | null | undefined) => !!paidUntil && date <= paidUntil;
+export const hasFare = (event: { fareCents?: number | null }) => typeof event.fareCents === 'number' && event.fareCents > 0;
+
+export type ScheduleEvent = z.infer<typeof eventSchema> & { id: string; revision: number; fareStatus?: FareStatus; farePaidAt?: string | null };
 export type SchedulePerson = { id: string; name: string | null; email: string | null; avatar?: string | null };
 // Events saved before multiple engineers only have techId.
 export const eventTechIds = (event: { techId: string; techIds?: string[] }) => event.techIds?.length ? event.techIds : [event.techId];

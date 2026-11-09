@@ -11,7 +11,7 @@ const { Prisma } = require('@prisma/client');
 // ---------------------------------------------------------------------------
 let counter = 0;
 const newId = () => `id-${++counter}`;
-const tables = { user: [], product: [], tax: [], quote: [], quoteItem: [], billingAccount: [], billingTemplate: [], customerBillingSequence: [], setting: [], serviceAuditEvent: [] };
+const tables = { user: [], product: [], tax: [], quote: [], quoteItem: [], billingAccount: [], billingTemplate: [], customerBillingSequence: [], setting: [], serviceAuditEvent: [], serviceRecord: [] };
 const relations = {
   quote: { items: row => tables.quoteItem.filter(item => item.quoteId === row.id).sort((a, b) => a.position - b.position), customer: row => tables.user.find(user => user.id === row.customerId) || null, tax: row => tables.tax.find(tax => tax.id === row.taxId) || null },
   billingAccount: { customer: row => tables.user.find(user => user.id === row.customerId) || null, template: row => tables.billingTemplate.find(template => template.id === row.templateId) || null },
@@ -125,7 +125,7 @@ function model(table) {
     count: async args => find(args?.where).length,
     aggregate: async args => { const rows = find(args?.where); const out = {}; if (args?._count) out._count = { _all: rows.length }; if (args?._sum) out._sum = Object.fromEntries(Object.keys(args._sum).map(key => [key, rows.length ? rows.reduce((sum, row) => sum + Number(row[key] || 0), 0) : null])); return out; },
     create: async args => {
-      const row = { ...defaults(), ...(table === 'quote' ? { number: tables.quote.length + 1 } : {}), ...(table === 'product' || table === 'tax' || table === 'billingTemplate' ? { active: true } : {}), ...(table === 'billingAccount' ? { status: 'ISSUED', publicEnabled: true, issuedAt: new Date() } : {}) };
+      const row = { ...defaults(), ...(table === 'quote' ? { number: tables.quote.length + 1 } : {}), ...(table === 'product' || table === 'tax' || table === 'billingTemplate' ? { active: true } : {}), ...(table === 'billingAccount' ? { status: 'ISSUED', publicEnabled: true, issuedAt: new Date() } : {}), ...(table === 'serviceRecord' ? { revision: 1 } : {}) };
       applyData(table, row, args.data);
       const violation = uniqueViolation(table, row);
       if (violation) throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test', meta: { target: violation } });
@@ -141,13 +141,21 @@ function model(table) {
 const db = Object.fromEntries(Object.keys(tables).map(table => [table, model(table)]));
 db.$transaction = async fn => fn(db);
 // The numbering UPSERT used by issueBillingAccount, emulated on the sequence table.
-db.$queryRaw = async (strings, ...values) => {
+db.$queryRaw = async (first, ...rest) => {
+  // Tagged template (prisma.$queryRaw`...`) or a Prisma.sql object (prisma.$queryRaw(Prisma.sql`...`)).
+  const strings = first && first.strings ? first.strings : first, values = first && first.strings ? first.values : rest;
   const sql = strings.join('?');
   if (sql.includes('CustomerBillingSequence')) {
     const [customerId, start] = values;
     let row = tables.customerBillingSequence.find(sequence => sequence.customerId === customerId);
     if (row) row.lastNumber += 1; else { row = { customerId, lastNumber: start }; tables.customerBillingSequence.push(row); }
     return [{ lastNumber: row.lastNumber }];
+  }
+  // Schedule events with a fare (lib/fares.ts): date range for the report, cutoff date for payments.
+  if (sql.includes('FROM "ServiceRecord"')) {
+    const rows = tables.serviceRecord.filter(r => r.kind === 'schedule' && (r.payload.fareCents || 0) > 0);
+    if (sql.includes("'date' >= ?")) { const [from, to] = values; return rows.filter(r => r.payload.date >= from && r.payload.date <= to).map(r => ({ id: r.id, revision: r.revision, payload: r.payload })); }
+    const [until] = values; return rows.filter(r => r.payload.date <= until && (r.payload.fareStatus || 'pending') !== 'paid').map(r => ({ id: r.id, revision: r.revision, payload: r.payload }));
   }
   throw new Error(`Unexpected raw query: ${sql}`);
 };
@@ -165,7 +173,8 @@ Module._load = function (request, parent, isMain) {
   if (request === '@/lib/support/server') {
     // Unexpected (non-ServiceError) failures are printed so a 503 in a test is diagnosable.
     const real = originalLoad.call(this, path.join(__dirname, '..', 'lib/support/server'), parent, isMain);
-    return { ...real, serviceError: error => { if (!(error instanceof real.ServiceError)) console.error('[unexpected]', error); return real.serviceError(error); } };
+    const serviceUser = async () => { const user = tables.user.find(u => u.id === sessionUserId); if (!user) throw new real.ServiceError('No autorizado', 401); if (user.role === 'CUSTOMER') throw new real.ServiceError('Acceso restringido', 403); return user; };
+    return { ...real, serviceUser, serviceError: error => { if (!(error instanceof real.ServiceError)) console.error('[unexpected]', error); return real.serviceError(error); } };
   }
   if (request.startsWith('@/')) request = path.join(__dirname, '..', request.slice(2));
   return originalLoad.call(this, request, parent, isMain);
@@ -184,6 +193,11 @@ const billingPdf = require('../app/api/billing/[id]/pdf/route.ts');
 const publicBilling = require('../app/api/public/billing/[token]/route.ts');
 const templates = require('../app/api/billing/templates/route.ts');
 const generate = require('../app/api/billing/templates/generate/route.ts');
+const schedule = require('../app/api/schedule/route.ts');
+const fares = require('../app/api/fares/route.ts');
+const fareById = require('../app/api/fares/[id]/route.ts');
+const farePay = require('../app/api/fares/pay/route.ts');
+const fareExport = require('../app/api/fares/export/route.ts');
 
 const json = (url, method, body) => new Request(`http://localhost${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 const ctx = id => ({ params: { id, token: id } });
@@ -201,7 +215,8 @@ tables.user.push(
   sessionUserId = null; assert.equal((await products.GET(json('/api/products', 'GET'))).status, 401);
   for (const denied of ['agent', 'customer-a']) {
     sessionUserId = denied;
-    assert.equal((await products.GET(json('/api/products', 'GET'))).status, 403);
+    // The product list is shared with Inventario, so agents may read it; the accounting modules stay closed.
+    assert.equal((await products.GET(json('/api/products', 'GET'))).status, denied === 'agent' ? 200 : 403);
     assert.equal((await quotes.POST(json('/api/quotes', 'POST', {}))).status, 403);
     assert.equal((await billing.POST(json('/api/billing', 'POST', {}))).status, 403);
     assert.equal((await templates.GET(json('/api/billing/templates', 'GET'))).status, 403);
@@ -341,6 +356,48 @@ tables.user.push(
   assert.equal(row.generated.numberLabel, '04'); assert.equal(listed.templates.find(item => item.id === templateB.id).generated.numberLabel, '51');
   assert.equal((await (await templates.GET(json('/api/billing/templates?period=2027-01', 'GET'))).json()).templates.find(item => item.id === template.id).generated, null);
   assert.equal(templates.DELETE, undefined);
+
+  // Pasajes: entered on events, reported, accepted, paid in bulk and frozen afterwards.
+  sessionUserId = 'agent';
+  const event = { title: 'Visita cliente', techId: 'agent', techIds: ['agent'], clientId: 'customer-a', date: '2026-11-03', start: '08:00', status: 'planned', description: '' };
+  assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...event, fareCents: 1200000 }))).status, 400, 'a fare needs its reason');
+  response = await schedule.POST(json('/api/schedule', 'POST', { ...event, fareCents: 1200000, fareReason: 'Transporte ida y vuelta', fareStatus: 'paid' }));
+  assert.equal(response.status, 200); const eventId = (await response.json()).id;
+  let record = tables.serviceRecord.find(r => r.id === eventId);
+  assert.equal(record.payload.fareCents, 1200000); assert.equal(record.payload.fareStatus, 'pending', 'client cannot set the status');
+  await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-05', fareCents: 800000, fareReason: 'Taxi' }));
+  await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-20', fareCents: 500000, fareReason: 'Bus' }));
+  await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-21' }));
+  let report = await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-30', 'GET'))).json();
+  assert.equal(report.fares.length, 3); assert.equal(report.totals.totalCents, 2500000); assert.equal(report.totals.pendingCents, 2500000); assert.equal(report.paidUntil, null);
+  assert.equal((await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-04', 'GET'))).json()).totals.count, 1);
+  // Only administration and accounting manage fares.
+  assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'accept', revision: record.revision }), ctx(eventId))).status, 403);
+  assert.equal((await farePay.POST(json('/api/fares/pay', 'POST', { until: '2026-11-05' }))).status, 403);
+  sessionUserId = 'accounting';
+  assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'accept', revision: record.revision }), ctx(eventId))).status, 200);
+  record = tables.serviceRecord.find(r => r.id === eventId); assert.equal(record.payload.fareStatus, 'accepted');
+  const laterFare = tables.serviceRecord.find(r => r.payload.date === '2026-11-20');
+  assert.equal((await fareById.POST(json(`/api/fares/${laterFare.id}`, 'POST', { action: 'remove', revision: laterFare.revision }), ctx(laterFare.id))).status, 200);
+  assert.equal(tables.serviceRecord.find(r => r.id === laterFare.id).payload.fareCents, null, 'removed fare');
+  assert.equal((await farePay.POST(json('/api/fares/pay', 'POST', { until: '2099-01-01' }))).status, 400, 'no future cutoffs');
+  response = await farePay.POST(json('/api/fares/pay', 'POST', { until: '2026-11-05' })); assert.equal(response.status, 200);
+  const paid = await response.json(); assert.equal(paid.count, 2); assert.equal(paid.totalCents, 2000000); assert.equal(paid.paidUntil, '2026-11-05');
+  report = await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-30', 'GET'))).json();
+  assert.equal(report.paidUntil, '2026-11-05'); assert.equal(report.totals.paidCents, 2000000); assert.equal(report.totals.pendingCents, 0);
+  assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'remove', revision: tables.serviceRecord.find(r => r.id === eventId).revision }), ctx(eventId))).status, 409, 'paid fares cannot be removed');
+  // Frozen: events up to the cutoff cannot change their fare, but the rest of the event can still be edited.
+  sessionUserId = 'agent';
+  record = tables.serviceRecord.find(r => r.id === eventId);
+  assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...record.payload, id: eventId, revision: record.revision, fareCents: 999900 }))).status, 400);
+  assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...record.payload, id: eventId, revision: record.revision, title: 'Visita reprogramada' }))).status, 200);
+  record = tables.serviceRecord.find(r => r.id === eventId); assert.equal(record.payload.fareStatus, 'paid'); assert.equal(record.payload.title, 'Visita reprogramada');
+  assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-04', fareCents: 100, fareReason: 'x' }))).status, 400, 'no new fares before the cutoff');
+  assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-06', fareCents: 100, fareReason: 'x' }))).status, 200, 'after the cutoff fares are allowed');
+  const sheet = await fareExport.GET(json('/api/fares/export?from=2026-11-01&to=2026-11-30', 'GET'));
+  assert.equal(sheet.status, 200); assert.ok(sheet.headers.get('Content-Type').includes('spreadsheetml'));
+  assert.equal(Buffer.from(await sheet.arrayBuffer()).subarray(0, 2).toString(), 'PK');
+  sessionUserId = 'accounting';
 
   console.log('PASS: authorization for Contabilidad/administrators, catalog without deletion, default tax, quote totals and frozen snapshots, per-customer numbering, void without reuse, public link token lifecycle, recurring templates with per-period duplicates and per-item results');
 })().catch(error => { console.error(error); process.exitCode = 1; });

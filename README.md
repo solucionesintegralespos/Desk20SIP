@@ -12,6 +12,13 @@ cuenta conserva su snapshot y su PDF, tiene enlace público con token aleatorio 
 y puede anularse sin liberar su número. Requiere la migración `supabase/migrations/202611040001_accounting_quotes_billing.sql`
 (ver `docs/accounting-module.md`). Validación: `npm run test:accounting` y `npm run test:billing-numbering`.
 
+Inventario (todo el personal) controla existencias sobre el catálogo de productos: compras, entradas, bajas,
+conteos y kardex, más préstamos de equipos con salida (cliente, técnico, fotos) y entrada por orden, y un reporte de
+disponibles y prestados con el tiempo transcurrido. Los eventos de Programación registran pasajes (valor y motivo);
+el menú Pasajes los reporta por fechas con totales y exportación a Excel, y administración o contabilidad los aceptan,
+eliminan o marcan como pagados hasta una fecha, que bloquea ese campo hacia atrás. Ver `docs/inventory-fares.md`.
+Validación: `npm run test:inventory`.
+
 Incentivos (solo administradores) permite consultar cada mes de Colombia para los líderes
 de Mesa de Ayuda, Cizaro y FE. Mesa de Ayuda parte de los 14 indicadores de referencia;
 los otros dos cargos quedan sin reglas. Asigna a la persona responsable y revisa las

@@ -9,7 +9,9 @@ const db = {
   serviceRecord: {
     findMany: async ({ where }) => records.filter(r => r.kind === where.kind && r.payload.date.startsWith(where.payload.string_starts_with)),
     create: async ({ data }) => { records.push(data); return data; },
+    findUnique: async ({ where }) => records.find(r => r.id === where.id) || null,
   },
+  setting: { findUnique: async () => null },
   serviceAuditEvent: { create: async () => ({}) },
   $transaction: fn => fn(db),
 };

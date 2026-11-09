@@ -26,7 +26,7 @@ const db = {
     findMany: async ({ where }) => messages.filter(m => m.ticketId === where.ticketId && (where.isInternal === undefined || m.isInternal === where.isInternal)).map(m => ({ ...m, author: users.get(m.authorId) })),
     create: async ({ data }) => { const m = { id: `m${messages.length + 1}`, createdAt: new Date(), ...data }; messages.push(m); return { ...m, author: users.get(m.authorId), ticket: { ...tickets.get(m.ticketId), customer: users.get(tickets.get(m.ticketId).customerId) } }; },
   },
-  setting: { findMany: async () => [] },
+  setting: { findMany: async () => [], findUnique: async () => null },
   // The route passes a Prisma.sql object (strings + values).
   $queryRaw: async query => { rawQuery = { sql: query.strings.join('?'), values: query.values }; return []; },
 };

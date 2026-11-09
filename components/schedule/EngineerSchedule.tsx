@@ -10,13 +10,16 @@ import { Avatar } from '@/components/ui/Avatar';
 import { searchText } from '@/components/support/SearchFilter';
 import { colombiaHolidays } from '@/lib/colombia-holidays';
 import { serviceDay } from '@/lib/support/order-display';
-import { eventSchema, eventTechIds, statusLabels, timeLabel, repeatDates, repeatConflict, weekdayLabels, type RepeatRule, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
+import { eventSchema, eventTechIds, statusLabels, timeLabel, repeatDates, repeatConflict, weekdayLabels, fareLocked, fareStatusLabels, hasFare, type RepeatRule, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
+import { MoneyInput } from '@/components/accounting/MoneyInput';
+import { formatMoney, formatDateCO } from '@/lib/accounting/format';
 import TechnicianPicker from '@/components/tickets/TechnicianPicker';
 import { SCHEDULE_CHANGED } from '@/components/reminders/TaskReminders';
 import { SearchSelect } from '@/components/ui/SearchSelect';
 
-type Data = { events: ScheduleEvent[]; engineers: SchedulePerson[]; clients: SchedulePerson[] };
-type Draft = Omit<ScheduleEvent, 'id' | 'revision'> & { id?: string; revision?: number };
+type Data = { events: ScheduleEvent[]; engineers: SchedulePerson[]; clients: SchedulePerson[]; faresPaidUntil?: string | null };
+type Draft = Omit<ScheduleEvent, 'id' | 'revision'> & { id?: string; revision?: number; fareCents: number | null; fareReason: string };
+const withFare = (event: ScheduleEvent): Draft => ({ ...event, techIds: eventTechIds(event), fareCents: typeof event.fareCents === 'number' && event.fareCents > 0 ? event.fareCents : null, fareReason: event.fareReason || '' });
 type Repeat = { mode: 'none' | 'weekly' | 'monthly'; weekday: number };
 const weekdayOf = (date: string) => new Date(date + 'T12:00:00Z').getUTCDay();
 const toRule = (repeat: Repeat): RepeatRule | null => repeat.mode === 'weekly' ? { mode: 'weekly', weekday: repeat.weekday } : repeat.mode === 'monthly' ? { mode: 'monthly' } : null;
@@ -78,7 +81,7 @@ export default function EngineerSchedule() {
     openedEvent.current = requestedEvent;
     setEngineer(''); setStatus(''); setQuery('');
     if (new Date(event.date + 'T12:00:00Z').getUTCDay() % 6 === 0) setWeekend(true);
-    setWeek(monday(event.date)); setFormError(''); setDeleting(false); setDraft({ ...event, techIds: eventTechIds(event) });
+    setWeek(monday(event.date)); setFormError(''); setDeleting(false); setDraft(withFare(event));
     router.replace('/dashboard/schedule', { scroll: false });
   }, [loading, requestedEvent, data.events, router]);
   const days = Array.from({ length: weekend ? 7 : 5 }, (_, index) => addDays(week, index));
@@ -92,13 +95,14 @@ export default function EngineerSchedule() {
   function open(event?: ScheduleEvent, techId = engineer || data.engineers[0]?.id || '', date = week) {
     setFormError(''); setDeleting(false); setTab('details');
     setRepeat({ mode: 'none', weekday: weekdayOf(event?.date || date) });
-    setDraft(event ? { ...event, techIds: eventTechIds(event) } : { title: '', techId, techIds: techId ? [techId] : [], clientId: null, date, start: '08:00', status: 'planned', description: '' });
+    setDraft(event ? withFare(event) : { title: '', techId, techIds: techId ? [techId] : [], clientId: null, date, start: '08:00', status: 'planned', description: '', fareCents: null, fareReason: '' });
   }
   async function persist(remove = false): Promise<boolean> {
     if (!draft) return false;
     if (!remove) {
       const parsed = eventSchema.safeParse(draft);
       if (!parsed.success) { setFormError(parsed.error.issues[0].message); return false; }
+      if (draft.fareCents && !draft.fareReason.trim()) { setFormError('Indica el motivo del pasaje'); return false; }
     }
     setBusy(true); setFormError('');
     const rule = !remove && !draft.id ? toRule(repeat) : null;
@@ -130,6 +134,9 @@ export default function EngineerSchedule() {
     router.push(`/dashboard/tickets/new?${params}`);
   }
   const patch = (value: Partial<Draft>) => setDraft(current => current && ({ ...current, ...value }));
+  // Fares of events up to the paid-until date are frozen; the rest of the event stays editable.
+  const fareFrozen = !!draft && fareLocked(draft.date, data.faresPaidUntil);
+  const fareReasonMissing = !!draft?.fareCents && !draft.fareReason.trim();
   // Dragging a card to another cell changes its day and, across rows, swaps that engineer.
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -201,7 +208,7 @@ export default function EngineerSchedule() {
           const pending = event.status === 'planned' || event.status === 'in_progress';
           return <div key={event.id} className={`schedule-event schedule-${event.status} ${dragging === event.id ? 'schedule-dragging' : ''}`} draggable
             onDragStart={drag => { drag.dataTransfer.setData('text/plain', JSON.stringify({ id: event.id, from: person.id })); drag.dataTransfer.effectAllowed = 'move'; setDragging(event.id); }}
-            onDragEnd={() => { setDragging(null); setDropTarget(null); }}><button type="button" onClick={() => open(event)} className="schedule-event-open"><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span>{eventTechIds(event).length > 1 && <span className="block text-[10px] mt-1" title={eventTechIds(event).map(id => name(data.engineers.find(person => person.id === id))).join(', ')}>Compartido · {eventTechIds(event).length} ingenieros</span>}<span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span></button>{pending && <button type="button" className="schedule-done" disabled={completing === event.id} onClick={() => void complete(event)} aria-label={`Marcar «${event.title}» como completada`}><Check size={11} aria-hidden="true" />{completing === event.id ? 'Guardando…' : 'Listo'}</button>}</div>;
+            onDragEnd={() => { setDragging(null); setDropTarget(null); }}><button type="button" onClick={() => open(event)} className="schedule-event-open"><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span>{eventTechIds(event).length > 1 && <span className="block text-[10px] mt-1" title={eventTechIds(event).map(id => name(data.engineers.find(person => person.id === id))).join(', ')}>Compartido · {eventTechIds(event).length} ingenieros</span>}<span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span>{hasFare(event) && <span className="block text-[10px] mt-1 opacity-80" title={`Pasajes: ${event.fareReason || ''}`}>🚌 {formatMoney(event.fareCents!)}</span>}</button>{pending && <button type="button" className="schedule-done" disabled={completing === event.id} onClick={() => void complete(event)} aria-label={`Marcar «${event.title}» como completada`}><Check size={11} aria-hidden="true" />{completing === event.id ? 'Guardando…' : 'Listo'}</button>}</div>;
         })}{!events.length && <p className="schedule-empty">{allEvents.length ? 'Sin coincidencias' : 'Sin programación'}</p>}<button type="button" className="schedule-add" aria-label={`Añadir evento para ${name(person)} el ${day}`} onClick={() => open(undefined, person.id, day)}><Plus size={12} />Añadir</button></div></td>;
       })}</tr>)}</tbody></table></div>
       {!engineers.length && <p className="p-8 text-center text-slate-500">No hay ingenieros para mostrar.</p>}
@@ -218,6 +225,14 @@ export default function EngineerSchedule() {
       <div className="form-grid"><Field label="Fecha"><Input required type="date" value={draft.date} onChange={event => patch({ date: event.target.value })} /></Field><Field label="Estado"><select className="border rounded-lg p-2" value={draft.status} onChange={event => patch({ status: event.target.value as Draft['status'] })}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field></div>
       <Field label="Hora inicial"><Input required type="time" value={draft.start} onChange={event => patch({ start: event.target.value })} /></Field>
       <Field label="Descripción"><Textarea rows={3} maxLength={5000} value={draft.description} onChange={event => patch({ description: event.target.value })} /></Field>
+      <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-medium">Pasajes</p>{draft.id && (draft as Draft & { fareStatus?: keyof typeof fareStatusLabels }).fareStatus && draft.fareCents ? <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${(draft as Draft & { fareStatus?: string }).fareStatus === 'paid' ? 'bg-green-50 text-green-800' : (draft as Draft & { fareStatus?: string }).fareStatus === 'accepted' ? 'bg-blue-50 text-blue-800' : 'bg-amber-50 text-amber-800'}`}>{fareStatusLabels[(draft as Draft & { fareStatus: keyof typeof fareStatusLabels }).fareStatus]}</span> : null}</div>
+        {fareFrozen && <p className="text-xs text-amber-800 bg-amber-50 rounded-lg p-2">Pasajes pagados hasta el {formatDateCO(`${data.faresPaidUntil}T12:00:00-05:00`)}: no se pueden modificar.</p>}
+        <div className="form-grid">
+          <Field label="Pasajes (valor)"><MoneyInput aria-label="Pasajes (valor)" valueCents={draft.fareCents} disabled={fareFrozen} placeholder="0" onChange={fareCents => patch({ fareCents })} /></Field>
+          <Field label="Motivo del pasaje" required={!!draft.fareCents} error={fareReasonMissing && !fareFrozen ? 'Indica el motivo del pasaje.' : undefined}><Input maxLength={300} value={draft.fareReason} disabled={fareFrozen} placeholder="Ej.: visita a cliente, traslado de equipos" onChange={event => patch({ fareReason: event.target.value })} /></Field>
+        </div>
+      </div>
       </div>
       {!draft.id && <div role="tabpanel" id="schedule-panel-repeat" aria-labelledby="schedule-tab-repeat" hidden={tab !== 'repeat'} className="detail-stack">
         <fieldset className="space-y-3 text-sm"><legend className="font-medium mb-2">Repetir este evento</legend>

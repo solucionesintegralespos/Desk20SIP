@@ -11,6 +11,8 @@ Module._load = function (request, parent, isMain) {
 const format = require('../lib/accounting/format.ts');
 const words = require('../lib/accounting/number-words.ts');
 const roles = require('../lib/roles.ts');
+const schedule = require('../lib/schedule.ts');
+const { xlsx } = require('../lib/xlsx.ts');
 
 // Billing numbers: digits only, two digits minimum.
 assert.equal(format.formatBillingNumber(1), '01');
@@ -69,5 +71,16 @@ assert.ok(roles.canUseAccounting('ACCOUNTING')); assert.ok(roles.canUseAccountin
 assert.ok(roles.isManagedRole('ACCOUNTING')); assert.ok(!roles.isManagedRole('CUSTOMER')); assert.ok(!roles.isManagedRole('ROOT'));
 assert.deepEqual(roles.STAFF_ROLES, ['ADMIN', 'AGENT', 'ACCOUNTING']); assert.deepEqual(roles.ADMIN_ROLES, ['ADMIN']); assert.deepEqual(roles.ACCOUNTING_ROLES, ['ADMIN', 'ACCOUNTING']);
 assert.equal(roles.roleLabels.ACCOUNTING, 'Contabilidad');
+
+// Pasajes: events on or before the paid-until date are frozen; a fare exists only with a positive amount.
+assert.ok(schedule.fareLocked('2026-10-31', '2026-10-31')); assert.ok(schedule.fareLocked('2026-09-01', '2026-10-31'));
+assert.ok(!schedule.fareLocked('2026-11-01', '2026-10-31')); assert.ok(!schedule.fareLocked('2026-11-01', null)); assert.ok(!schedule.fareLocked('2026-11-01', undefined));
+assert.ok(schedule.hasFare({ fareCents: 1200000 })); assert.ok(!schedule.hasFare({ fareCents: 0 })); assert.ok(!schedule.hasFare({ fareCents: null })); assert.ok(!schedule.hasFare({}));
+assert.equal(schedule.eventSchema.safeParse({ title: 'Visita', techId: 'a', clientId: null, date: '2026-11-09', start: '08:00', status: 'planned', description: '', fareCents: 850000, fareReason: 'Transporte' }).success, true);
+assert.equal(schedule.eventSchema.safeParse({ title: 'Visita', techId: 'a', clientId: null, date: '2026-11-09', start: '08:00', status: 'planned', description: '', fareCents: -1 }).success, false);
+// Excel export: a valid zip with the sheet and numeric cells.
+const book = xlsx({ name: 'Pasajes', columns: [{ header: 'Fecha' }, { header: 'Valor' }], rows: [['2026-11-01', 12000], ['Total', 12000]] });
+assert.equal(book.subarray(0, 2).toString(), 'PK'); assert.ok(book.length > 1000);
+assert.ok(book.includes(Buffer.from('xl/worksheets/sheet1.xml')));
 
 console.log('PASS: billing number format, cents arithmetic, tax rounding, amounts in words, periods and role helpers');

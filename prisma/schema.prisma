@@ -68,6 +68,8 @@ model User {
   serviceClients    ServiceRecord[] @relation("ServiceClient")
   serviceAssigned   ServiceRecord[] @relation("ServiceTechnician")
   quotes            Quote[]          @relation("QuoteCustomer")
+  loansAsCustomer   EquipmentLoan[]  @relation("LoanCustomer")
+  loansAsTechnician EquipmentLoan[]  @relation("LoanTechnician")
   billingAccounts   BillingAccount[] @relation("BillingCustomer")
   billingTemplates  BillingTemplate[] @relation("BillingTemplateCustomer")
   billingSequence   CustomerBillingSequence?
@@ -249,11 +251,86 @@ model Product {
   // Suggested unit price; editable per quote line without touching the catalog.
   price       Decimal     @db.Decimal(14, 2)
   active      Boolean     @default(true)
+  // Inventory on hand (units). Every change goes through an InventoryMovement.
+  stock       Int         @default(0)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   quoteItems  QuoteItem[]
+  movements   InventoryMovement[]
+  loans       EquipmentLoan[]
 
   @@index([active, name])
+}
+
+// ---------------------------------------------------------------------------
+// Inventory: stock movements (kardex) and equipment loans to customers.
+// ---------------------------------------------------------------------------
+
+enum InventoryMovementType {
+  PURCHASE
+  ENTRY
+  WRITE_OFF
+  COUNT
+  LOAN_OUT
+  LOAN_IN
+}
+
+model InventoryMovement {
+  id              String                @id @default(cuid())
+  productId       String
+  product         Product               @relation(fields: [productId], references: [id])
+  type            InventoryMovementType
+  // Signed change applied to the stock (counts store the adjustment).
+  quantity        Int
+  balanceAfter    Int
+  unitCost        Decimal?              @db.Decimal(14, 2)
+  reference       String?
+  notes           String?
+  // Physical count: units found.
+  countedQuantity Int?
+  loanId          String?
+  loan            EquipmentLoan?        @relation(fields: [loanId], references: [id])
+  createdById     String?
+  createdAt       DateTime              @default(now())
+
+  @@index([productId, createdAt])
+  @@index([type, createdAt])
+  @@index([loanId])
+}
+
+enum LoanStatus {
+  OUT
+  RETURNED
+}
+
+// Equipment lent to a customer under a technician's responsibility, with photos at exit and return.
+model EquipmentLoan {
+  id            String              @id @default(cuid())
+  number        Int                 @unique @default(autoincrement())
+  productId     String
+  product       Product             @relation(fields: [productId], references: [id])
+  quantity      Int                 @default(1)
+  customerId    String
+  customer      User                @relation("LoanCustomer", fields: [customerId], references: [id])
+  technicianId  String
+  technician    User                @relation("LoanTechnician", fields: [technicianId], references: [id])
+  status        LoanStatus          @default(OUT)
+  outAt         DateTime            @default(now())
+  outNotes      String?
+  outPhotos     String[]
+  returnedAt    DateTime?
+  returnNotes   String?
+  returnPhotos  String[]
+  returnedById  String?
+  createdById   String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  movements     InventoryMovement[]
+
+  @@index([status, outAt])
+  @@index([productId, status])
+  @@index([customerId])
+  @@index([technicianId])
 }
 
 model Tax {

@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { getDashboardSession } from '@/lib/dashboard-data'
 import { ServiceError, serviceError } from '@/lib/support/server'
-import { canUseAccounting } from '@/lib/roles'
+import { canUseAccounting, isStaff } from '@/lib/roles'
 
 export { ServiceError, serviceError }
 
@@ -13,6 +13,16 @@ export async function accountingUser() {
   const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true, name: true, email: true, role: true, active: true } })
   if (!user || !user.active) throw new ServiceError('No autorizado', 401)
   if (!canUseAccounting(user.role)) throw new ServiceError('Acceso restringido a administración y contabilidad', 403)
+  return user
+}
+
+/** Any active staff member (agents, accounting, administrators): inventory, loans and fares. */
+export async function staffUser() {
+  const session = await getDashboardSession()
+  if (!session) throw new ServiceError('No autorizado', 401)
+  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true, name: true, email: true, role: true, active: true } })
+  if (!user || !user.active) throw new ServiceError('No autorizado', 401)
+  if (!isStaff(user.role)) throw new ServiceError('Acceso restringido al personal', 403)
   return user
 }
 

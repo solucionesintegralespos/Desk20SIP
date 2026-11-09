@@ -1,12 +1,12 @@
 import { prisma } from '@/lib/prisma'
-import { accountingUser, serviceError, ServiceError, readJson, audit } from '@/lib/accounting/server'
+import { accountingUser, staffUser, serviceError, ServiceError, readJson, audit } from '@/lib/accounting/server'
 import { productSchema, serializeProduct, priceDecimal } from '@/lib/accounting/catalog'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   try {
-    await accountingUser()
+    await staffUser()
     const onlyActive = new URL(request.url).searchParams.get('active') === '1'
     const products = await prisma.product.findMany({
       where: onlyActive ? { active: true } : {},
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const user = await accountingUser()
+    const user = await staffUser()
     const parsed = productSchema.safeParse(await readJson(request))
     if (!parsed.success) throw new ServiceError(parsed.error.issues.map(issue => issue.message).join('. '))
     const input = parsed.data
