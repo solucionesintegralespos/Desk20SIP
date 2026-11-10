@@ -40,6 +40,11 @@ const request = (action, revision, value = plan) => new Request('http://localhos
  }
  role = 'ADMIN'; assert.equal((await GET(new Request('http://localhost/api/incentives?month=bad'))).status, 400);
  assert.equal((await POST(request('save', 0))).status, 200);
+ // Saving stores the calculated results; they are served as-is until the next save.
+ const afterSave = records.get('incentive:2026-01:helpdesk');
+ assert.equal(afterSave.payload.snapshot.total, 25000); assert.equal(afterSave.payload.closedAt, undefined);
+ const served = (await (await GET(new Request('http://localhost/api/incentives?month=2026-01'))).json()).plans[0];
+ assert.equal(served.results.calculatedAt, afterSave.payload.snapshot.calculatedAt);
  assert.equal((await POST(request('save', 0))).status, 409);
  assert.equal((await POST(request('close', 1, { ...plan, indicators: [{ ...plan.indicators[0], confirmed: false }] }))).status, 400);
  assert.equal((await POST(request('close', 1, { ...plan, leaderId: '' }))).status, 400);
@@ -54,5 +59,15 @@ const request = (action, revision, value = plan) => new Request('http://localhos
  assert.equal(data.plans[1].indicators.length, 0);
  assert.equal(audits.length, 2);
  assert.equal((await POST(request('save', 0, { ...plan, month: '2100-01' }))).status, 400);
- console.log('PASS: admin authorization, input validation, monthly persistence, revision conflicts, pending closure rejection, immutable snapshots and audit');
+ // The current month can be closed too (monthly liquidation decided by the administrator): it freezes the saved results.
+ const thisMonth = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).format(new Date());
+ const current = { ...plan, month: thisMonth, leaderRole: 'cizaro' };
+ assert.equal((await POST(request('save', 0, current))).status, 200);
+ const savedCurrent = records.get(`incentive:${thisMonth}:cizaro`).payload.snapshot;
+ assert.equal((await POST(request('close', 1, current))).status, 200);
+ const closedCurrent = records.get(`incentive:${thisMonth}:cizaro`).payload;
+ assert.ok(closedCurrent.closedAt); assert.equal(closedCurrent.snapshot.calculatedAt, savedCurrent.calculatedAt, 'closing keeps the results of the last save');
+ assert.equal((await POST(request('save', 2, current))).status, 409);
+ assert.equal((await POST(request('close', 0, { ...plan, month: thisMonth, leaderRole: 'fe', indicators: [{ ...plan.indicators[0], confirmed: false }] }))).status, 400, 'pending rules block the closure');
+ console.log('PASS: admin authorization, input validation, monthly persistence, stored results, revision conflicts, pending closure rejection, current-month closure, immutable snapshots and audit');
 })().catch(error => { console.error(error); process.exitCode = 1; });

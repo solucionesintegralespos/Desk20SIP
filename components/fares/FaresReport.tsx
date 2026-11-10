@@ -14,7 +14,7 @@ import { serviceDay } from '@/lib/support/order-display'
 type Person = { id: string; name: string }
 type FareRow = { id: string; date: string; start: string; title: string; reason: string; amountCents: number; status: FareStatus; paidAt: string | null; revision: number; technicians: Person[]; customer: Person | null }
 type Totals = { count: number; totalCents: number; pendingCents: number; acceptedCents: number; paidCents: number }
-type Response = { from: string; to: string; paidUntil: string | null; fares: FareRow[]; totals: Totals; technicians: Person[] }
+type Response = { from: string; to: string; paidUntil: string | null; canManage: boolean; fares: FareRow[]; totals: Totals; technicians: Person[] }
 
 const monthRange = (period: string) => {
   const [year, month] = period.split('-').map(Number)
@@ -26,6 +26,7 @@ const dayLabel = (date: string) => formatDateCO(`${date}T12:00:00-05:00`)
 
 export default function FaresReport() {
   const { data: session } = useSession()
+  // Administration and accounting manage every fare; agents only see their own (the API enforces both).
   const canManage = canUseAccounting(session?.user?.role) || isAdmin(session?.user?.role)
   const today = serviceDay(new Date().toISOString())
   const [range, setRange] = useState(() => monthRange(currentPeriod()))
@@ -74,7 +75,7 @@ export default function FaresReport() {
     <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3"><Bus className="text-primary-600" /> Pasajes</h1>
-        <p className="text-gray-600 mt-1">Pasajes registrados en los eventos de la programación, con su total y estado de pago.</p>
+        <p className="text-gray-600 mt-1">{canManage ? 'Pasajes registrados en los eventos de la programación, con su total y estado de pago.' : 'Tus pasajes registrados en los eventos de la programación, con su total y estado de pago. Contabilidad los acepta y los marca como pagados.'}</p>
       </div>
       <a href={`/api/fares/export?${query}`} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"><Download className="h-4 w-4" /> Exportar a Excel</a>
     </div>
@@ -86,13 +87,14 @@ export default function FaresReport() {
         <button type="button" onClick={() => setRange(monthRange(currentPeriod()))} className="px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">Este mes</button>
         <button type="button" onClick={() => setRange(monthRange(previousPeriod(currentPeriod())))} className="px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">Mes anterior</button>
       </div>
-      <div className="w-full md:w-64">
+      {canManage && <div className="w-full md:w-64">
         <span className="block text-sm font-medium text-gray-700 mb-1">Ingeniero</span>
         <SearchSelect aria-label="Ingeniero" placeholder="Buscar ingeniero…" emptyOption="Todos los ingenieros" value={tech} onChange={setTech} options={techOptions} />
-      </div>
+      </div>}
     </div>
 
     {data?.paidUntil && <p className="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-800">Pasajes pagados hasta el <strong>{dayLabel(data.paidUntil)}</strong>. Los eventos hasta esa fecha ya no admiten cambios en sus pasajes.</p>}
+    {data && !data.canManage && <p className="mb-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">Solo ves tus propios pasajes. Para registrar uno, agrégalo al evento en Programación; aceptarlos, eliminarlos o marcarlos como pagados corresponde a Contabilidad y Administración.</p>}
 
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
       {[['Pasajes', totals ? String(totals.count) : '—'], ['Total del período', totals ? formatMoney(totals.totalCents) : '—'], ['Pendientes', totals ? formatMoney(totals.pendingCents) : '—'], ['Aceptados', totals ? formatMoney(totals.acceptedCents) : '—'], ['Pagados', totals ? formatMoney(totals.paidCents) : '—']].map(([label, value], index) =>

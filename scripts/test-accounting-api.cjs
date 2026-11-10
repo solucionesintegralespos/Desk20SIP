@@ -374,9 +374,14 @@ tables.user.push(
   await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-05', fareCents: 800000, fareReason: 'Taxi' }));
   await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-20', fareCents: 500000, fareReason: 'Bus' }));
   await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-21' }));
-  // The report belongs to accounting and administrators; agents only register fares on their events.
-  assert.equal((await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-30', 'GET'))).status, 403);
+  // Every staff member opens the report, but agents only see their own fares (the tech filter is ignored).
+  await schedule.POST(json('/api/schedule', 'POST', { ...event, techId: 'accounting', techIds: ['accounting'], date: '2026-12-02', fareCents: 300000, fareReason: 'Otro técnico' }));
+  let own = await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-12-31&tech=accounting', 'GET'))).json();
+  assert.equal(own.canManage, false); assert.equal(own.fares.length, 3); assert.ok(own.fares.every(row => row.technicians.some(t => t.id === 'agent')), 'agents see only their fares');
+  assert.deepEqual(own.technicians, []);
   sessionUserId = 'accounting';
+  own = await (await fares.GET(json('/api/fares?from=2026-12-01&to=2026-12-31', 'GET'))).json();
+  assert.equal(own.canManage, true); assert.equal(own.fares.length, 1, 'accounting sees everyone');
   let report = await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-30', 'GET'))).json();
   assert.equal(report.fares.length, 3); assert.equal(report.totals.totalCents, 2500000); assert.equal(report.totals.pendingCents, 2500000); assert.equal(report.paidUntil, null);
   assert.equal((await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-04', 'GET'))).json()).totals.count, 1);
@@ -404,7 +409,7 @@ tables.user.push(
   record = tables.serviceRecord.find(r => r.id === eventId); assert.equal(record.payload.fareStatus, 'paid'); assert.equal(record.payload.title, 'Visita reprogramada');
   assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-04', fareCents: 100, fareReason: 'x' }))).status, 400, 'no new fares before the cutoff');
   assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-06', fareCents: 100, fareReason: 'x' }))).status, 200, 'after the cutoff fares are allowed');
-  assert.equal((await fareExport.GET(json('/api/fares/export?from=2026-11-01&to=2026-11-30', 'GET'))).status, 403, 'export is accounting-only');
+  assert.equal((await fareExport.GET(json('/api/fares/export?from=2026-11-01&to=2026-11-30', 'GET'))).status, 200, 'agents export their own fares');
   sessionUserId = 'accounting';
   const sheet = await fareExport.GET(json('/api/fares/export?from=2026-11-01&to=2026-11-30', 'GET'));
   assert.equal(sheet.status, 200); assert.ok(sheet.headers.get('Content-Type').includes('spreadsheetml'));

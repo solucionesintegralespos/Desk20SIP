@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { ServiceError, serviceError, serviceUser } from '@/lib/support/server'
-import { calculatePlan, initialPlan, leaderRoles, planSchema, type IncentivePlan, type SavedIncentivePlan } from '@/lib/incentives'
+import { calculatePlan, indicatorSchema, initialPlan, leaderRoles, planSchema, type IncentivePlan, type SavedIncentivePlan } from '@/lib/incentives'
 import { incentiveMonth } from '@/lib/incentive-calculation'
 import { Prisma } from '@prisma/client'
 import { STAFF_ROLES, isAdmin } from '@/lib/roles'
@@ -20,6 +20,8 @@ async function results(plan: IncentivePlan, db: Prisma.TransactionClient = prism
     categoryId: true, tags: true, assigneeId: true, assignments: { select: { userId: true } }, messages: { where: { type: 'SYSTEM' }, select: { content: true, createdAt: true } } } })
   return calculatePlan(plan, tickets)
 }
+const samePlan = (a: IncentivePlan, b: IncentivePlan) => a.leaderId === b.leaderId && JSON.stringify([...a.teamIds].sort()) === JSON.stringify([...b.teamIds].sort()) &&
+  JSON.stringify(a.indicators.map(i => indicatorSchema.parse(i))) === JSON.stringify(b.indicators.map(i => indicatorSchema.parse(i)))
 export async function GET(request: Request) {
   try {
     await admin()
@@ -59,16 +61,18 @@ export async function POST(request: Request) {
       if ((existing?.revision || 0) !== body.revision) throw new ServiceError('Otra persona actualizó este mes. Recarga antes de guardar.', 409)
       const previous = existing?.payload as unknown as SavedIncentivePlan | undefined
       if (previous?.closedAt) throw new ServiceError('La liquidación está cerrada y conserva sus valores originales.', 409)
+      // Results are calculated when saving and kept until the next save; closing freezes the month for good.
       const payload: SavedIncentivePlan = { ...plan, leaderName: leaderRoles[plan.leaderRole] }
       if (body.action === 'close') {
         if (!plan.leaderId || !plan.indicators.length) throw new ServiceError('Asigna el líder responsable y define sus indicadores antes de cerrar')
-        if (range.end > new Date()) throw new ServiceError('Solo puedes cerrar la liquidación cuando termine el mes')
-        const snapshot = await results(plan, tx)
-        if (snapshot.rows.some(row => row.status === 'pending')) throw new ServiceError('Confirma las reglas y completa los datos pendientes antes de cerrar')
+        // The month closes with the values on screen: the results of the last save when the rules did not change.
+        const snapshot = previous?.snapshot && samePlan(previous, plan) ? previous.snapshot : await results(plan, tx)
+        const pending = snapshot.rows.filter(row => row.status === 'pending').length
+        if (pending) throw new ServiceError(`Confirma las reglas de ${pending} indicador${pending === 1 ? '' : 'es'} pendiente${pending === 1 ? '' : 's'} antes de cerrar`)
         payload.closedAt = new Date().toISOString()
         payload.closedBy = actor.name || actor.email || actor.id
         payload.snapshot = snapshot
-      }
+      } else payload.snapshot = await results(plan, tx)
       const data = JSON.parse(JSON.stringify(payload)) as Prisma.InputJsonValue
       if (existing) {
         const updated = await tx.serviceRecord.updateMany({ where: { id, revision: body.revision }, data: { payload: data, revision: { increment: 1 } } })

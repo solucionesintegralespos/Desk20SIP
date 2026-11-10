@@ -65,7 +65,7 @@ export default function Sidebar({ user, openTicketsCount }: SidebarProps) {
     { name: 'Órdenes de servicio', href: '/dashboard/orders', icon: FileSignature, roles: staff },
     { name: 'Checklists', href: '/dashboard/checklists', icon: ClipboardCheck, roles: staff },
     { name: 'Inventario', href: '/dashboard/inventory', icon: Boxes, roles: staff },
-    { name: 'Pasajes', href: '/dashboard/fares', icon: Bus, roles: accounting },
+    { name: 'Pasajes', href: '/dashboard/fares', icon: Bus, roles: staff },
     { name: 'Cotizaciones', href: '/dashboard/quotes', icon: FileText, roles: accounting },
     { name: 'Cuentas de cobro', href: '/dashboard/billing', icon: Receipt, roles: accounting },
     { name: 'Catálogo', href: '/dashboard/catalog', icon: Package, roles: accounting },

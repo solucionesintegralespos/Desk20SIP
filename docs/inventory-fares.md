@@ -22,7 +22,7 @@
 ## Pasajes en el cronograma
 
 - El formulario de evento tiene **Pasajes (valor)** en formato moneda y **Motivo del pasaje** (obligatorio cuando hay valor). Al guardarse, el pasaje queda **Pendiente**.
-- Menú **Pasajes** (`/dashboard/fares`, solo Contabilidad y Administración): reporte por rango de fechas (por defecto el mes actual) y por ingeniero, con totales (pendientes, aceptados, pagados) y exportación a Excel (`.xlsx` generado sin dependencias en `lib/xlsx.ts`).
+- Menú **Pasajes** (`/dashboard/fares`, todo el personal): reporte por rango de fechas (por defecto el mes actual), con totales (pendientes, aceptados, pagados) y exportación a Excel (`.xlsx` generado sin dependencias en `lib/xlsx.ts`). Contabilidad y Administración ven a todos los ingenieros y pueden filtrar por uno; los agentes solo ven (y exportan) sus propios pasajes, en modo lectura: la API ignora el filtro de ingeniero y responde 403 a aceptar, eliminar o pagar.
 - Administración y Contabilidad pueden **Aceptar** o **Eliminar** un pasaje y **Marcar como pagados hasta** una fecha: todos los pasajes pendientes o aceptados hasta esa fecha pasan a **Pagado** y la fecha queda registrada. Desde esa fecha hacia atrás, el campo de pasajes del formulario de evento queda bloqueado (el servidor también lo rechaza); el resto del evento sigue siendo editable. La fecha de corte nunca retrocede.
 
 ## Conteo masivo

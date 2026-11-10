@@ -15,8 +15,9 @@ y puede anularse sin liberar su número. Requiere la migración `supabase/migrat
 Inventario (todo el personal) controla existencias sobre el catálogo de productos: compras, entradas, bajas,
 conteos y kardex, más préstamos de equipos con salida (cliente, técnico, fotos) y entrada por orden, y un reporte de
 disponibles y prestados con el tiempo transcurrido. Los eventos de Programación registran pasajes (valor y motivo);
-el menú Pasajes los reporta por fechas con totales y exportación a Excel, y administración o contabilidad los aceptan,
-eliminan o marcan como pagados hasta una fecha, que bloquea ese campo hacia atrás. Ver `docs/inventory-fares.md`.
+el menú Pasajes (todo el personal) los reporta por fechas con totales y exportación a Excel; los agentes solo ven los
+suyos, y administración o contabilidad los aceptan, eliminan o marcan como pagados hasta una fecha, que bloquea ese
+campo hacia atrás. Ver `docs/inventory-fares.md`.
 Validación: `npm run test:inventory`.
 
 Incentivos (solo administradores) permite consultar cada mes de Colombia para los líderes
@@ -31,9 +32,10 @@ de creación y cierre; los plazos por días usan intervalos de 24 horas. El back
 todos los tickets abiertos con más de 30 días al corte, reconstruyendo estados a partir
 del historial del sistema cuando existe. Las revisiones usan categorías específicas.
 Las metas y cantidades de puntos instalados se configuran por mes, y las reglas se pueden
-copiar del mes anterior. El seguimiento se actualiza cada minuto mientras la pantalla está
-abierta. Después de terminar el mes, el cierre guarda una instantánea inmutable de reglas,
-conteos, tickets contabilizados y liquidación. Los cambios requieren revisión coincidente
+copiar del mes anterior. Los resultados se calculan al pulsar «Guardar y calcular» y se
+conservan tal cual hasta el siguiente guardado. La liquidación es mensual: el cierre (del mes
+en curso o de uno anterior, sin indicadores pendientes) congela reglas, conteos, tickets
+contabilizados y liquidación tal como se guardaron, y ese mes ya no admite cambios. Los cambios requieren revisión coincidente
 y quedan auditados. No requiere migración: utiliza registros de tipo `incentive-month`.
 Validación: `node scripts/test-incentive-calculation.cjs`, `node scripts/test-incentives.cjs`
 y `node scripts/test-incentive-api.cjs` (API aislada, sin modificar la base de datos).

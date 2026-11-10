@@ -1,4 +1,5 @@
-import { accountingUser, serviceError } from '@/lib/accounting/server'
+import { staffUser, serviceError } from '@/lib/accounting/server'
+import { canUseAccounting } from '@/lib/roles'
 import { xlsx, XLSX_TYPE } from '@/lib/xlsx'
 import { fareStatusLabels } from '@/lib/schedule'
 import { formatDateTimeCO } from '@/lib/accounting/format'
@@ -6,12 +7,13 @@ import { fareRows, parseFareRange } from '@/lib/fares-report'
 
 export const dynamic = 'force-dynamic'
 
-// Excel export of the fares in the selected range, with a total row.
+// Excel export of the fares in the selected range, with a total row. Agents export only their own fares.
 export async function GET(request: Request) {
   try {
-    await accountingUser()
-    const { from, to, tech } = parseFareRange(new URL(request.url).searchParams)
-    const rows = await fareRows(from, to, tech)
+    const user = await staffUser()
+    const range = parseFareRange(new URL(request.url).searchParams)
+    const { from, to } = range
+    const rows = await fareRows(from, to, canUseAccounting(user.role) ? range.tech : user.id)
     const total = rows.reduce((sum, row) => sum + row.amountCents, 0) / 100
     const file = xlsx({
       name: 'Pasajes',
