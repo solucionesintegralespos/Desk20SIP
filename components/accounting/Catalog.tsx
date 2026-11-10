@@ -7,11 +7,11 @@ import { api } from './api'
 import { formatMoney, formatNumber, toCents } from '@/lib/accounting/format'
 import { MoneyInput } from './MoneyInput'
 
-type Product = { id: string; name: string; description: string | null; price: number; active: boolean; createdAt: string; updatedAt: string }
+type Product = { id: string; name: string; description: string | null; price: number; active: boolean; loanable?: boolean; createdAt: string; updatedAt: string }
 type Tax = { id: string; name: string; rate: number; active: boolean; isDefault: boolean }
 type Tab = 'products' | 'taxes'
 
-type ProductDraft = { id?: string; name: string; description: string; priceCents: number | null }
+type ProductDraft = { id?: string; name: string; description: string; priceCents: number | null; loanable: boolean }
 type TaxDraft = { id?: string; name: string; rate: string; isDefault: boolean }
 
 const fieldClass = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500'
@@ -58,7 +58,7 @@ export default function Catalog() {
     if (Object.keys(productErrors(draft)).length) return
     setBusy(true)
     try {
-      const body = { name: draft.name.trim(), description: draft.description.trim(), price: (draft.priceCents ?? 0) / 100 }
+      const body = { name: draft.name.trim(), description: draft.description.trim(), price: (draft.priceCents ?? 0) / 100, loanable: draft.loanable }
       if (draft.id) await api(`/api/products/${draft.id}`, { method: 'PATCH', json: body })
       else await api('/api/products', { method: 'POST', json: body })
       toast.success(draft.id ? 'Producto actualizado' : 'Producto creado')
@@ -124,7 +124,7 @@ export default function Catalog() {
         <p className="mt-1 text-gray-600">Productos e impuestos disponibles para las cotizaciones</p>
       </div>
       {tab === 'products'
-        ? <Button disabled={busy || loading} onClick={() => { setAttempted(false); setProductDraft({ name: '', description: '', priceCents: null }) }}><Plus size={16} /> Nuevo producto</Button>
+        ? <Button disabled={busy || loading} onClick={() => { setAttempted(false); setProductDraft({ name: '', description: '', priceCents: null, loanable: false }) }}><Plus size={16} /> Nuevo producto</Button>
         : <Button disabled={busy || loading} onClick={() => { setAttempted(false); setTaxDraft({ name: '', rate: '', isDefault: false }) }}><Plus size={16} /> Nuevo impuesto</Button>}
     </div>
 
@@ -153,9 +153,9 @@ export default function Catalog() {
               <td className="px-4 py-3 font-medium text-gray-900">{product.name}</td>
               <td className="max-w-md px-4 py-3 text-gray-600"><span className="line-clamp-2">{product.description || '—'}</span></td>
               <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{formatMoney(toCents(product.price))}</td>
-              <td className="px-4 py-3"><StatusPill active={product.active} /></td>
+              <td className="px-4 py-3"><span className="flex flex-wrap items-center gap-1"><StatusPill active={product.active} />{product.loanable && <span className="inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-xs font-semibold text-primary-700">Préstamo</span>}</span></td>
               <td className="whitespace-nowrap px-4 py-3 text-right"><div className="flex justify-end gap-2">
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => { setAttempted(false); setProductDraft({ id: product.id, name: product.name, description: product.description || '', priceCents: toCents(product.price) }) }} aria-label={`Editar ${product.name}`}><Pencil size={14} /> Editar</Button>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => { setAttempted(false); setProductDraft({ id: product.id, name: product.name, description: product.description || '', priceCents: toCents(product.price), loanable: !!product.loanable }) }} aria-label={`Editar ${product.name}`}><Pencil size={14} /> Editar</Button>
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => void toggleProduct(product)} aria-label={`${product.active ? 'Desactivar' : 'Activar'} ${product.name}`}><Power size={14} /> {product.active ? 'Desactivar' : 'Activar'}</Button>
               </div></td>
             </tr>)}</tbody>
@@ -198,6 +198,10 @@ export default function Catalog() {
             <MoneyInput required valueCents={productDraft.priceCents} invalid={!!pErrors.priceCents} onChange={cents => setProductDraft({ ...productDraft, priceCents: cents })} className="mt-1 text-sm" placeholder="0" />
             {pErrors.priceCents && <span role="alert" className="mt-1 block text-xs font-medium text-red-700">{pErrors.priceCents}</span>}
             <span className="mt-1 block text-xs font-normal text-gray-500">Se carga al elegir el producto en una cotización y puede ajustarse allí sin modificar el catálogo.</span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={productDraft.loanable} onChange={e => setProductDraft({ ...productDraft, loanable: e.target.checked })} className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <span><span className="font-medium">Equipo de préstamo</span><span className="block text-xs text-gray-500">Solo los productos marcados aparecen en Inventario › Préstamos y en el reporte de Equipos.</span></span>
           </label>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" disabled={busy} onClick={() => { setProductDraft(null); setAttempted(false) }}>Cancelar</Button>

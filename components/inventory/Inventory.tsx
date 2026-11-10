@@ -4,10 +4,12 @@ import StockTable from './StockTable'
 import Kardex from './Kardex'
 import Loans from './Loans'
 import LoanReport from './LoanReport'
+import BulkCount from './BulkCount'
 
 const tabs = [
   { id: 'stock', label: 'Existencias' },
   { id: 'kardex', label: 'Kardex' },
+  { id: 'counts', label: 'Conteos' },
   { id: 'loans', label: 'Préstamos' },
   { id: 'report', label: 'Equipos' },
 ] as const
@@ -32,6 +34,7 @@ export default function Inventory() {
     <div role="tabpanel">
       {tab === 'stock' && <StockTable />}
       {tab === 'kardex' && <Kardex />}
+      {tab === 'counts' && <BulkCount />}
       {tab === 'loans' && <Loans />}
       {tab === 'report' && <LoanReport />}
     </div>

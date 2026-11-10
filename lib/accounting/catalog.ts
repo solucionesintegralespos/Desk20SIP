@@ -11,12 +11,14 @@ export const productSchema = z.object({
   description: z.string().trim().max(1000, 'La descripción no puede superar 1000 caracteres').optional().default(''),
   price: z.number().finite().min(0, 'El precio no puede ser negativo').max(99999999999, 'El precio es demasiado alto'),
   active: z.boolean().optional().default(true),
+  /** Equipment that can be lent to customers. */
+  loanable: z.boolean().optional().default(false),
 })
 export type ProductInput = z.infer<typeof productSchema>
 
-export const serializeProduct = (product: { id: string; name: string; description: string | null; price: Prisma.Decimal; active: boolean; createdAt: Date; updatedAt: Date }) => ({
+export const serializeProduct = (product: { id: string; name: string; description: string | null; price: Prisma.Decimal; active: boolean; loanable?: boolean; createdAt: Date; updatedAt: Date }) => ({
   id: product.id, name: product.name, description: product.description, price: decimal(product.price) ?? 0,
-  active: product.active, createdAt: product.createdAt.toISOString(), updatedAt: product.updatedAt.toISOString(),
+  active: product.active, loanable: product.loanable ?? false, createdAt: product.createdAt.toISOString(), updatedAt: product.updatedAt.toISOString(),
 })
 export type SerializedProduct = ReturnType<typeof serializeProduct>
 

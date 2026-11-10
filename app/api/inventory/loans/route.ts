@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       prisma.equipmentLoan.findMany({ where, include: loanInclude, orderBy: [{ status: 'asc' }, { outAt: 'desc' }], skip: (page - 1) * PER_PAGE, take: PER_PAGE }),
       prisma.equipmentLoan.count({ where }),
       prisma.user.findMany({ where: { role: { in: STAFF_ROLES }, active: true }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } }),
-      prisma.product.findMany({ where: { active: true }, select: { id: true, name: true, stock: true, active: true }, orderBy: { name: 'asc' } }),
+      prisma.product.findMany({ where: { active: true, loanable: true }, select: { id: true, name: true, stock: true, active: true }, orderBy: { name: 'asc' } }),
     ])
     return Response.json({
       loans: loans.map(serializeLoan), total, page, perPage: PER_PAGE,

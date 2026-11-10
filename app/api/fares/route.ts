@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { staffUser, serviceError } from '@/lib/accounting/server'
+import { accountingUser, serviceError } from '@/lib/accounting/server'
 import { getFaresPaidUntil } from '@/lib/fares'
 import { fareRows, parseFareRange } from '@/lib/fares-report'
 import { STAFF_ROLES } from '@/lib/roles'
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 // Fares (pasajes) of the schedule events in a date range, with totals by status.
 export async function GET(request: Request) {
   try {
-    await staffUser()
+    await accountingUser()
     const { from, to, tech } = parseFareRange(new URL(request.url).searchParams)
     const [rows, paidUntil, technicians] = await Promise.all([
       fareRows(from, to, tech), getFaresPaidUntil(),

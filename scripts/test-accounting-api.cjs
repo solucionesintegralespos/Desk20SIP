@@ -229,14 +229,15 @@ tables.user.push(
 
   // Catalog: products are never deleted, duplicates are rejected, inactive ones are hidden from quotes.
   assert.equal(products.DELETE, undefined); assert.equal(productById.DELETE, undefined); assert.equal(taxes.DELETE, undefined);
-  let response = await products.POST(json('/api/products', 'POST', { name: 'Impresora POS', description: 'Puerto de red 80mm', price: 520000 }));
-  assert.equal(response.status, 201); const printer = await response.json(); assert.equal(printer.price, 520000);
+  let response = await products.POST(json('/api/products', 'POST', { name: 'Impresora POS', description: 'Puerto de red 80mm', price: 520000, loanable: true }));
+  assert.equal(response.status, 201); const printer = await response.json(); assert.equal(printer.price, 520000); assert.equal(printer.loanable, true, 'loan equipment flag stored');
   assert.equal((await products.POST(json('/api/products', 'POST', { name: 'impresora pos', price: 1 }))).status, 409);
+  assert.equal((await (await products.POST(json('/api/products', 'POST', { name: 'Cable HDMI', price: 25000 }))).json()).loanable, false, 'not loanable by default');
   assert.equal((await products.POST(json('/api/products', 'POST', { name: 'Cable', price: -5 }))).status, 400);
   response = await products.POST(json('/api/products', 'POST', { name: 'Producto viejo', price: 1000 })); const old = await response.json();
   assert.equal((await productById.PATCH(json(`/api/products/${old.id}`, 'PATCH', { active: false }), ctx(old.id))).status, 200);
-  assert.deepEqual((await (await products.GET(json('/api/products?active=1', 'GET'))).json()).map(p => p.name), ['Impresora POS']);
-  assert.equal((await (await products.GET(json('/api/products', 'GET'))).json()).length, 2);
+  assert.deepEqual((await (await products.GET(json('/api/products?active=1', 'GET'))).json()).map(p => p.name), ['Cable HDMI', 'Impresora POS']);
+  assert.equal((await (await products.GET(json('/api/products', 'GET'))).json()).length, 3);
 
   // Taxes: IVA 19 % seeded and default; only one default at a time.
   let taxList = await (await taxes.GET(json('/api/taxes', 'GET'))).json();
@@ -368,10 +369,14 @@ tables.user.push(
   await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-05', fareCents: 800000, fareReason: 'Taxi' }));
   await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-20', fareCents: 500000, fareReason: 'Bus' }));
   await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-21' }));
+  // The report belongs to accounting and administrators; agents only register fares on their events.
+  assert.equal((await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-30', 'GET'))).status, 403);
+  sessionUserId = 'accounting';
   let report = await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-30', 'GET'))).json();
   assert.equal(report.fares.length, 3); assert.equal(report.totals.totalCents, 2500000); assert.equal(report.totals.pendingCents, 2500000); assert.equal(report.paidUntil, null);
   assert.equal((await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-04', 'GET'))).json()).totals.count, 1);
   // Only administration and accounting manage fares.
+  sessionUserId = 'agent';
   assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'accept', revision: record.revision }), ctx(eventId))).status, 403);
   assert.equal((await farePay.POST(json('/api/fares/pay', 'POST', { until: '2026-11-05' }))).status, 403);
   sessionUserId = 'accounting';
@@ -394,6 +399,8 @@ tables.user.push(
   record = tables.serviceRecord.find(r => r.id === eventId); assert.equal(record.payload.fareStatus, 'paid'); assert.equal(record.payload.title, 'Visita reprogramada');
   assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-04', fareCents: 100, fareReason: 'x' }))).status, 400, 'no new fares before the cutoff');
   assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...event, date: '2026-11-06', fareCents: 100, fareReason: 'x' }))).status, 200, 'after the cutoff fares are allowed');
+  assert.equal((await fareExport.GET(json('/api/fares/export?from=2026-11-01&to=2026-11-30', 'GET'))).status, 403, 'export is accounting-only');
+  sessionUserId = 'accounting';
   const sheet = await fareExport.GET(json('/api/fares/export?from=2026-11-01&to=2026-11-30', 'GET'));
   assert.equal(sheet.status, 200); assert.ok(sheet.headers.get('Content-Type').includes('spreadsheetml'));
   assert.equal(Buffer.from(await sheet.arrayBuffer()).subarray(0, 2).toString(), 'PK');

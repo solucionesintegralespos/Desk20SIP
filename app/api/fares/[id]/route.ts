@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { staffUser, serviceError, ServiceError, readJson } from '@/lib/accounting/server'
+import { accountingUser, serviceError, ServiceError, readJson } from '@/lib/accounting/server'
 import { canUseAccounting, isAdmin } from '@/lib/roles'
 import { fareStatusOf } from '@/lib/fares'
 import type { ScheduleEvent } from '@/lib/schedule'
@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 // Accept a fare or remove it from the event. Paid fares are frozen.
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const user = await staffUser()
+    const user = await accountingUser()
     if (!canUseAccounting(user.role) && !isAdmin(user.role)) throw new ServiceError('Solo administración y contabilidad gestionan los pasajes', 403)
     const body = await readJson(request)
     if (!['accept', 'remove'].includes(body.action) || !Number.isInteger(body.revision)) throw new ServiceError('Operación inválida')

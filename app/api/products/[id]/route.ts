@@ -24,6 +24,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (input.description !== undefined) data.description = input.description || null
     if (input.price !== undefined) data.price = priceDecimal(input.price)
     if (input.active !== undefined) data.active = input.active
+    if (input.loanable !== undefined) data.loanable = input.loanable
     const product = await prisma.product.update({ where: { id: params.id }, data })
     const action = input.active !== undefined && input.active !== existing.active
       ? (input.active ? 'products:activated' : 'products:deactivated')

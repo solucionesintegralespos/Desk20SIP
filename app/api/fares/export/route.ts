@@ -1,4 +1,4 @@
-import { staffUser, serviceError } from '@/lib/accounting/server'
+import { accountingUser, serviceError } from '@/lib/accounting/server'
 import { xlsx, XLSX_TYPE } from '@/lib/xlsx'
 import { fareStatusLabels } from '@/lib/schedule'
 import { formatDateTimeCO } from '@/lib/accounting/format'
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 // Excel export of the fares in the selected range, with a total row.
 export async function GET(request: Request) {
   try {
-    await staffUser()
+    await accountingUser()
     const { from, to, tech } = parseFareRange(new URL(request.url).searchParams)
     const rows = await fareRows(from, to, tech)
     const total = rows.reduce((sum, row) => sum + row.amountCents, 0) / 100

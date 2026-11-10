@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     const duplicate = await prisma.product.findFirst({ where: { name: { equals: input.name, mode: 'insensitive' } }, select: { id: true } })
     if (duplicate) throw new ServiceError('Ya existe un producto con este nombre', 409)
     const product = await prisma.product.create({ data: {
-      name: input.name, description: input.description || null, price: priceDecimal(input.price), active: input.active,
+      name: input.name, description: input.description || null, price: priceDecimal(input.price), active: input.active, loanable: input.loanable,
     } })
     await audit(prisma, user.id, product.id, 'products:created')
     return Response.json(serializeProduct(product), { status: 201 })

@@ -253,6 +253,8 @@ model Product {
   active      Boolean     @default(true)
   // Inventory on hand (units). Every change goes through an InventoryMovement.
   stock       Int         @default(0)
+  // Equipment that can be lent to customers (Inventario > Préstamos / Equipos).
+  loanable    Boolean     @default(false)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   quoteItems  QuoteItem[]

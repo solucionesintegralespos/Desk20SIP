@@ -67,6 +67,7 @@ export default function StockTable() {
           <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar producto…" aria-label="Buscar producto" className={`${inputClass} pl-10`} />
         </div>
         <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={onlyActive} onChange={e => setOnlyActive(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary-600" /> Solo activos</label>
+        <Link href="?tab=counts" className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-base font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"><ClipboardList size={16} /> Conteo masivo</Link>
         <Button variant="outline" onClick={() => setMovement({ product: null })}><ClipboardList size={16} /> Registrar movimiento</Button>
         <Button onClick={() => setCreating(true)}><Plus size={16} /> Nuevo producto</Button>
       </div>
