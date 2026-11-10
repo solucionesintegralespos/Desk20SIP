@@ -198,6 +198,11 @@ const fares = require('../app/api/fares/route.ts');
 const fareById = require('../app/api/fares/[id]/route.ts');
 const farePay = require('../app/api/fares/pay/route.ts');
 const fareExport = require('../app/api/fares/export/route.ts');
+const productExport = require('../app/api/products/export/route.ts');
+const productImport = require('../app/api/products/import/route.ts');
+const productTemplate = require('../app/api/products/import/template/route.ts');
+const { xlsx: buildXlsx } = require('../lib/xlsx.ts');
+const { readXlsx } = require('../lib/xlsx-read.ts');
 
 const json = (url, method, body) => new Request(`http://localhost${url}`, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 const ctx = id => ({ params: { id, token: id } });
@@ -405,6 +410,36 @@ tables.user.push(
   assert.equal(sheet.status, 200); assert.ok(sheet.headers.get('Content-Type').includes('spreadsheetml'));
   assert.equal(Buffer.from(await sheet.arrayBuffer()).subarray(0, 2).toString(), 'PK');
   sessionUserId = 'accounting';
+
+  // Catalog <-> Excel: round trip, template examples ignored, create/update by name, apply.
+  sessionUserId = 'accounting';
+  const exported = await productExport.GET(); assert.equal(exported.status, 200);
+  const exportedRows = readXlsx(Buffer.from(await exported.arrayBuffer()));
+  assert.deepEqual(exportedRows[0], ['Nombre', 'Descripción', 'Precio sugerido', 'Activo', 'Equipo de préstamo', 'Existencias']);
+  assert.ok(exportedRows.some(row => row[0] === 'Renombrado' && row[2] === 999 && row[4] === 'Sí'), 'exported products keep price and loan flag');
+  const templateFile = Buffer.from(await (await productTemplate.GET()).arrayBuffer());
+  const upload = (buffer, name = 'productos.xlsx') => { const form = new FormData(); form.append('file', new File([buffer], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); return new Request('http://localhost/api/products/import', { method: 'POST', body: form }); };
+  let plan = await (await productImport.POST(upload(templateFile))).json();
+  assert.equal(plan.summary.create + plan.summary.update, 0, 'template examples are never imported');
+  assert.ok(plan.rows.filter(r => r.message === 'Fila de ejemplo o instrucciones').length >= 3);
+  const workbook = buildXlsx({ name: 'Productos', columns: [{ header: 'Nombre' }, { header: 'Descripción' }, { header: 'Precio sugerido' }, { header: 'Activo' }, { header: 'Equipo de préstamo' }], rows: [
+    ['Monitor táctil 15"', 'Pantalla POS', 1250000, 'Sí', 'Sí'],
+    ['renombrado', 'Precio nuevo', 1000, 'No', ''],
+    ['Cable HDMI', '', 25000, 'Sí', 'No'],
+    ['', '', 10, '', ''],
+    ['Sin precio', 'x', '', '', ''],
+    ['Monitor táctil 15"', 'duplicado', 1, '', ''],
+  ] });
+  plan = await (await productImport.POST(upload(workbook))).json();
+  assert.deepEqual(plan.rows.map(r => r.action), ['create', 'update', 'skip', 'error', 'error', 'error']);
+  assert.deepEqual(plan.rows[1].changes, ['descripción', 'precio', 'desactivar']);
+  assert.equal((await productImport.POST(upload(Buffer.from('not a workbook'), 'x.xlsx'))).status, 400);
+  assert.equal((await productImport.POST(upload(workbook, 'productos.csv'))).status, 400);
+  response = await productImport.PUT(json('/api/products/import', 'PUT', { rows: plan.rows })); assert.equal(response.status, 200);
+  const applied = await response.json(); assert.equal(applied.created, 1); assert.equal(applied.updated, 1);
+  const monitor = tables.product.find(p => p.name === 'Monitor táctil 15"'); assert.ok(monitor && monitor.loanable === true && Number(monitor.price) === 1250000);
+  const renamed = tables.product.find(p => p.name === 'Renombrado'); assert.equal(renamed.active, false); assert.equal(Number(renamed.price), 1000);
+  sessionUserId = 'agent'; assert.equal((await productImport.POST(upload(workbook))).status, 403, 'import is accounting-only'); sessionUserId = 'accounting';
 
   console.log('PASS: authorization for Contabilidad/administrators, catalog without deletion, default tax, quote totals and frozen snapshots, per-customer numbering, void without reuse, public link token lifecycle, recurring templates with per-period duplicates and per-item results');
 })().catch(error => { console.error(error); process.exitCode = 1; });

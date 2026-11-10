@@ -6,6 +6,7 @@ import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Textar
 import { api } from './api'
 import { formatMoney, formatNumber, toCents } from '@/lib/accounting/format'
 import { MoneyInput } from './MoneyInput'
+import { ProductImport } from './ProductImport'
 
 type Product = { id: string; name: string; description: string | null; price: number; active: boolean; loanable?: boolean; createdAt: string; updatedAt: string }
 type Tax = { id: string; name: string; rate: number; active: boolean; isDefault: boolean }
@@ -124,7 +125,7 @@ export default function Catalog() {
         <p className="mt-1 text-gray-600">Productos e impuestos disponibles para las cotizaciones</p>
       </div>
       {tab === 'products'
-        ? <Button disabled={busy || loading} onClick={() => { setAttempted(false); setProductDraft({ name: '', description: '', priceCents: null, loanable: false }) }}><Plus size={16} /> Nuevo producto</Button>
+        ? <div className="flex flex-wrap items-center gap-2"><ProductImport disabled={busy || loading} onImported={() => { void refresh() }} /><Button disabled={busy || loading} onClick={() => { setAttempted(false); setProductDraft({ name: '', description: '', priceCents: null, loanable: false }) }}><Plus size={16} /> Nuevo producto</Button></div>
         : <Button disabled={busy || loading} onClick={() => { setAttempted(false); setTaxDraft({ name: '', rate: '', isDefault: false }) }}><Plus size={16} /> Nuevo impuesto</Button>}
     </div>
 

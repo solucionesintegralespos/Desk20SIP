@@ -15,6 +15,14 @@
 
 Las cotizaciones emitidas pueden editarse (botón Editar en el detalle): se reemplazan cliente, líneas, precios, impuesto y textos, conservando número, fecha y firmante; queda registrado en la auditoría como `quotes:updated`. También pueden duplicarse (Duplicar en el detalle o en el listado, `/dashboard/quotes/new?from=<id>`): abre un borrador nuevo con el mismo cliente, productos, precios, impuesto y textos, que al guardarse recibe número, fecha y firmante propios.
 
+## Catálogo en Excel
+
+En Catálogo › Productos: **Exportar Excel** descarga todo el catálogo (nombre, descripción, precio sugerido, activo, equipo de préstamo, existencias). **Plantilla** descarga el formato de importación con filas de ejemplo (empiezan por "EJEMPLO" y el importador las omite). **Importar Excel** lee un .xlsx, muestra una vista previa con la acción de cada fila (crear, actualizar, omitir, error) y aplica solo al confirmar. Los productos se identifican por nombre sin distinguir mayúsculas; en actualizaciones las celdas vacías conservan el valor actual; las existencias nunca se importan (se gestionan en Inventario). Lectura y escritura de .xlsx sin dependencias (`lib/xlsx.ts` y `lib/xlsx-read.ts`).
+
+## Notificaciones por correo de clientes
+
+Desde `202611100001_customer_email_notifications_default.sql` el valor por defecto de `emailNotifications` es `false` y los clientes existentes quedan sin notificaciones; el formulario de creación trae la casilla desmarcada y puede activarse por cliente.
+
 ## Numeración de cuentas de cobro
 
 - Cada cliente tiene su propio consecutivo (`CustomerBillingSequence`). La primera cuenta usa el "Número inicial de cuentas de cobro" del cliente (por defecto 1); después la secuencia avanza de uno en uno. Cambiar el número inicial no altera una secuencia ya iniciada.

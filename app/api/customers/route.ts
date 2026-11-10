@@ -116,6 +116,8 @@ export async function POST(request: Request) {
         email: email as any,
         password: hashedPassword as any,
         role: 'CUSTOMER',
+        // Email notifications are opt-in: off unless the form enables them.
+        emailNotifications: body.emailNotifications === true,
         phone,
         location,
         address,

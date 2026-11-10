@@ -20,6 +20,7 @@ export default function CreateCustomerForm() {
     businessName: '',
     taxId: '',
     billingStartNumber: '1',
+    emailNotifications: false,
   })
 
   useEffect(() => {
@@ -174,6 +175,19 @@ export default function CreateCustomerForm() {
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             placeholder="Ciudad, País"
           />
+        </div>
+
+        <div>
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.emailNotifications}
+              onChange={(e) => setFormData({ ...formData, emailNotifications: e.target.checked })}
+              className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+            />
+            <span className="text-sm font-medium text-gray-700">Recibir notificaciones por email</span>
+          </label>
+          <p className="text-xs text-gray-500 mt-1 ml-6">Desactivado por defecto. Si se activa, el cliente recibirá correos al crear tickets y recibir respuestas.</p>
         </div>
 
         <div>
