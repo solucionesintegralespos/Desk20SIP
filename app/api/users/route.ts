@@ -57,6 +57,7 @@ export async function GET(request: Request) {
         jobTitle: true,
         location: true,
         active: true,
+        canWriteOffInventory: true,
         createdAt: true,
       },
       orderBy: {
@@ -104,6 +105,9 @@ export async function POST(request: Request) {
     // Cargo: printed in the signature of quotes.
     if (body.jobTitle !== undefined && body.jobTitle !== null && (typeof body.jobTitle !== 'string' || body.jobTitle.trim().length > 100)) return NextResponse.json({ error: 'El cargo no puede superar 100 caracteres' }, { status: 400 })
     const jobTitle = typeof body.jobTitle === 'string' && body.jobTitle.trim() ? body.jobTitle.trim() : null
+    // Inventory write-offs are off unless the administrator enables them for the user.
+    if (body.canWriteOffInventory !== undefined && typeof body.canWriteOffInventory !== 'boolean') return NextResponse.json({ error: 'Permiso de bajas inválido' }, { status: 400 })
+    const canWriteOffInventory = body.canWriteOffInventory === true
     const invalid = validateUserPerformance(body)
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 })
 
@@ -142,6 +146,7 @@ export async function POST(request: Request) {
         phone,
         jobTitle,
         location,
+        canWriteOffInventory,
       },
       select: {
         id: true,
@@ -149,6 +154,7 @@ export async function POST(request: Request) {
         email: true,
         role: true,
         jobTitle: true,
+        canWriteOffInventory: true,
       }
     })
 

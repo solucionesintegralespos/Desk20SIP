@@ -22,7 +22,7 @@ const tag = `inventory-test-${Date.now()}`;
 const ids = { products: [], users: [] };
 async function cleanup() {
   await prisma.inventoryMovement.deleteMany({ where: { productId: { in: ids.products } } });
-  await prisma.equipmentLoan.deleteMany({ where: { productId: { in: ids.products } } });
+  await prisma.equipmentLoan.deleteMany({ where: { items: { some: { productId: { in: ids.products } } } } });
   await prisma.product.deleteMany({ where: { id: { in: ids.products } } });
   await prisma.serviceAuditEvent.deleteMany({ where: { actorId: tag } });
   await prisma.user.deleteMany({ where: { id: { in: ids.users } } });
@@ -54,21 +54,35 @@ const move = input => prisma.$transaction(tx => stock.applyMovement(tx, { actorI
   assert.equal(kardex.length, 8);
   assert.equal(kardex[kardex.length - 1].balanceAfter, 0);
 
-  // Loans: exit discounts stock, return restores it, a loan cannot be returned twice.
+  // Loans: one exit order with several pieces of equipment discounts each stock; the return restores all of them
+  // and closes the order; an order cannot be returned twice; a return always needs an existing exit order.
+  const cable = await prisma.product.create({ data: { name: `${tag} Cable`, price: 1000, stock: 5 } });
+  ids.products.push(cable.id);
   await move({ productId: product.id, type: 'ENTRY', quantity: 3 });
-  const loan = await prisma.$transaction(tx => stock.issueLoan(tx, { productId: product.id, quantity: 2, customerId: customer.id, technicianId: tech.id, notes: 'Demo', photos: ['/uploads/foto-1.jpg'] }, tag));
+  const loan = await prisma.$transaction(tx => stock.issueLoan(tx, { items: [{ productId: product.id, quantity: 2 }, { productId: cable.id, quantity: 4 }], customerId: customer.id, technicianId: tech.id, notes: 'Demo', photos: ['/uploads/foto-1.jpg'] }, tag));
   assert.equal(loan.status, 'OUT'); assert.ok(loan.number >= 1);
+  const items = await prisma.equipmentLoanItem.findMany({ where: { loanId: loan.id }, orderBy: { position: 'asc' } });
+  assert.deepEqual(items.map(item => [item.productId, item.quantity]), [[product.id, 2], [cable.id, 4]]);
   assert.equal((await prisma.product.findUnique({ where: { id: product.id } })).stock, 1);
-  await assert.rejects(prisma.$transaction(tx => stock.issueLoan(tx, { productId: product.id, quantity: 2, customerId: customer.id, technicianId: tech.id, notes: '', photos: [] }, tag)), /Existencias insuficientes/);
-  await assert.rejects(prisma.$transaction(tx => stock.issueLoan(tx, { productId: product.id, quantity: 1, customerId: tech.id, technicianId: tech.id, notes: '', photos: [] }, tag)), /cliente válido/);
+  assert.equal((await prisma.product.findUnique({ where: { id: cable.id } })).stock, 1);
+  // Insufficient stock on any line rolls the whole exit back (no partial orders).
+  await assert.rejects(prisma.$transaction(tx => stock.issueLoan(tx, { items: [{ productId: cable.id, quantity: 1 }, { productId: product.id, quantity: 2 }], customerId: customer.id, technicianId: tech.id, notes: '', photos: [] }, tag)), /Existencias insuficientes/);
+  assert.equal((await prisma.product.findUnique({ where: { id: cable.id } })).stock, 1, 'rolled back');
+  assert.equal(await prisma.equipmentLoan.count({ where: { items: { some: { productId: { in: ids.products } } } } }), 1);
+  await assert.rejects(prisma.$transaction(tx => stock.issueLoan(tx, { items: [{ productId: product.id, quantity: 1 }], customerId: tech.id, technicianId: tech.id, notes: '', photos: [] }, tag)), /cliente válido/);
+  assert.equal(stock.loanOutSchema.safeParse({ items: [], customerId: 'c', technicianId: 't' }).success, false, 'at least one piece of equipment');
+  assert.equal(stock.loanOutSchema.safeParse({ items: [{ productId: 'a', quantity: 1 }, { productId: 'a', quantity: 2 }], customerId: 'c', technicianId: 't' }).success, false, 'no duplicated products');
+  assert.equal(stock.loanReturnSchema.safeParse({ notes: 'sin salida' }).success, false, 'a return requires its exit order');
+  await assert.rejects(prisma.$transaction(tx => stock.returnLoan(tx, { loanId: 'missing-order', notes: '', photos: [] }, tag)), /no existe/);
   const returned = await prisma.$transaction(tx => stock.returnLoan(tx, { loanId: loan.id, notes: 'Todo bien', photos: ['/uploads/foto-2.jpg'] }, tag));
   assert.equal(returned.status, 'RETURNED'); assert.ok(returned.returnedAt); assert.deepEqual(returned.returnPhotos, ['/uploads/foto-2.jpg']);
   assert.equal((await prisma.product.findUnique({ where: { id: product.id } })).stock, 3);
-  await assert.rejects(prisma.$transaction(tx => stock.returnLoan(tx, { loanId: loan.id, notes: '', photos: [] }, tag)), /ya fue devuelto/);
-  const loanMoves = await prisma.inventoryMovement.findMany({ where: { loanId: loan.id }, orderBy: { createdAt: 'asc' } });
-  assert.deepEqual(loanMoves.map(m => [m.type, m.quantity]), [['LOAN_OUT', -2], ['LOAN_IN', 2]]);
+  assert.equal((await prisma.product.findUnique({ where: { id: cable.id } })).stock, 5);
+  await assert.rejects(prisma.$transaction(tx => stock.returnLoan(tx, { loanId: loan.id, notes: '', photos: [] }, tag)), /ya fue devuelta/);
+  const loanMoves = await prisma.inventoryMovement.findMany({ where: { loanId: loan.id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+  assert.deepEqual(loanMoves.map(m => [m.type, m.productId === product.id ? 'printer' : 'cable', m.quantity]).sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1])), [['LOAN_IN', 'cable', 4], ['LOAN_IN', 'printer', 2], ['LOAN_OUT', 'cable', -4], ['LOAN_OUT', 'printer', -2]]);
   assert.equal(stock.loanAge(new Date(Date.now() - 3 * 86400000)).label, '3 días');
   assert.equal(stock.loanAge(new Date(Date.now() - 2 * 3600000)).label, '2 horas');
 
-  console.log('PASS: purchases/entries/write-offs/counts with running balance, no negative stock under 10 concurrent write-offs, loans discount and restore stock, double return rejected, kardex links loan movements');
+  console.log('PASS: purchases/entries/write-offs/counts with running balance, no negative stock under 10 concurrent write-offs, multi-equipment loans discount and restore every stock atomically, returns require an exit order, double return rejected, kardex links loan movements');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => { await cleanup(); await prisma.$disconnect(); });

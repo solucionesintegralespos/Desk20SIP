@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowDownToLine, ArrowUpFromLine, Images, Loader2, Search } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, Images, Loader2, Plus, Search, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { api, type CustomerOption } from '@/components/accounting/api'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Input, Textarea } from '@/components/support/ui'
@@ -11,8 +11,9 @@ import Pagination from '@/components/tickets/Pagination'
 import { formatDateTimeCO } from '@/lib/accounting/format'
 import { PhotoUpload } from './PhotoUpload'
 
+type LoanItem = { id: string; productId: string; name: string; quantity: number }
 type Loan = {
-  id: string; number: number; numberLabel: string; product: { id: string; name: string }; quantity: number
+  id: string; number: number; numberLabel: string; items: LoanItem[]; units: number; itemsLabel: string
   customer: { id: string; name: string; businessName: string | null }; technician: { id: string; name: string }
   status: 'OUT' | 'RETURNED'; outAt: string; outNotes: string | null; outPhotos: string[]
   returnedAt: string | null; returnNotes: string | null; returnPhotos: string[]; ageLabel: string; days: number
@@ -20,8 +21,12 @@ type Loan = {
 type Person = { id: string; name: string }
 type ProductOption = { id: string; name: string; stock: number; active: boolean }
 type ListResponse = { loans: Loan[]; total: number; page: number; perPage: number; technicians: Person[]; products: ProductOption[] }
-type OutDraft = { productId: string; quantity: string; customerId: string; technicianId: string; notes: string; photos: string[] }
+// Several pieces of equipment per exit order; each line is a product with its units.
+type OutLine = { key: string; productId: string; quantity: string }
+type OutDraft = { items: OutLine[]; customerId: string; technicianId: string; notes: string; photos: string[] }
+// A return never stands alone: it points at the exit order it closes and inherits everything from it.
 type ReturnDraft = { loanId: string; notes: string; photos: string[] }
+const newLine = (): OutLine => ({ key: crypto.randomUUID(), productId: '', quantity: '1' })
 
 const inputClass = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500'
 const customerLabel = (customer: { name: string; businessName: string | null }) => customer.businessName || customer.name
@@ -68,19 +73,24 @@ export default function Loans() {
   const customerOptions = useMemo(() => customers.map(c => ({ id: c.id, label: c.businessName || c.name || c.email || 'Cliente', description: [c.businessName && c.businessName !== c.name ? c.name : '', c.taxId, c.email].filter(Boolean).join(' · ') || undefined })), [customers])
   const technicianOptions = useMemo(() => (data?.technicians || []).map(t => ({ id: t.id, label: t.name })), [data])
   const productOptions = useMemo(() => (data?.products || []).map(p => ({ id: p.id, label: p.name, description: p.stock > 0 ? `${p.stock} disponible${p.stock === 1 ? '' : 's'}` : 'Sin existencias' })), [data])
-  const openLoanOptions = useMemo(() => openLoans.map(loan => ({ id: loan.id, label: `${loan.numberLabel} · ${loan.product.name} × ${loan.quantity} · ${customerLabel(loan.customer)}`, description: `${loan.technician.name} · hace ${loan.ageLabel}` })), [openLoans])
+  const openLoanOptions = useMemo(() => openLoans.map(loan => ({ id: loan.id, label: `${loan.numberLabel} · ${customerLabel(loan.customer)} · ${loan.itemsLabel}`, description: `${loan.technician.name} · hace ${loan.ageLabel}` })), [openLoans])
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.perPage)) : 1
 
   function startOut() {
     setAttempted(false)
     const me = session?.user?.id || ''
-    setOutDraft({ productId: '', quantity: '1', customerId: '', technicianId: data?.technicians.some(t => t.id === me) ? me : '', notes: '', photos: [] })
+    setOutDraft({ items: [newLine()], customerId: '', technicianId: data?.technicians.some(t => t.id === me) ? me : '', notes: '', photos: [] })
   }
   function startReturn(loan?: Loan) { setAttempted(false); setReturnDraft({ loanId: loan?.id || '', notes: '', photos: [] }) }
+  function patchLine(key: string, change: Partial<OutLine>) { if (outDraft) setOutDraft({ ...outDraft, items: outDraft.items.map(line => line.key === key ? { ...line, ...change } : line) }) }
+  function removeLine(key: string) { if (outDraft && outDraft.items.length > 1) setOutDraft({ ...outDraft, items: outDraft.items.filter(line => line.key !== key) }) }
 
+  const lineErrors = (outDraft?.items || []).map((line, index, all) => ({
+    product: !line.productId ? 'Selecciona el equipo.' : all.findIndex(other => other.productId === line.productId) !== index ? 'Este equipo ya está en otra línea: súmalo allí.' : '',
+    quantity: !/^\d+$/.test(line.quantity) || Number(line.quantity) < 1 ? 'Cantidad entera mayor que cero.' : '',
+  }))
   const outErrors = outDraft ? {
-    product: !outDraft.productId ? 'Selecciona el equipo.' : '',
-    quantity: !/^\d+$/.test(outDraft.quantity) || Number(outDraft.quantity) < 1 ? 'Indica una cantidad entera mayor que cero.' : '',
+    items: lineErrors.some(line => line.product || line.quantity) ? 'Revisa los equipos de la salida.' : '',
     customer: !outDraft.customerId ? 'Selecciona el cliente.' : '',
     technician: !outDraft.technicianId ? 'Selecciona el técnico encargado.' : '',
   } : null
@@ -92,7 +102,7 @@ export default function Loans() {
     if (!outValid) return
     setBusy(true)
     try {
-      const loan = await api<Loan>('/api/inventory/loans', { method: 'POST', json: { productId: outDraft.productId, quantity: Number(outDraft.quantity), customerId: outDraft.customerId, technicianId: outDraft.technicianId, notes: outDraft.notes.trim(), photos: outDraft.photos } })
+      const loan = await api<Loan>('/api/inventory/loans', { method: 'POST', json: { items: outDraft.items.map(line => ({ productId: line.productId, quantity: Number(line.quantity) })), customerId: outDraft.customerId, technicianId: outDraft.technicianId, notes: outDraft.notes.trim(), photos: outDraft.photos } })
       toast.success(`Salida ${loan.numberLabel} registrada`)
       setOutDraft(null); await load()
     } catch (e) { toast.error((e as Error).message) }
@@ -114,9 +124,9 @@ export default function Loans() {
 
   return <>
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div><h2 className="text-xl font-semibold text-gray-900">Préstamos de equipos</h2><p className="text-sm text-gray-600">Salidas a clientes con técnico encargado y entradas al devolverlos, con fotos de cada paso.</p></div>
+      <div><h2 className="text-xl font-semibold text-gray-900">Préstamos de equipos</h2><p className="text-sm text-gray-600">Salidas a clientes con uno o varios equipos y técnico encargado; la entrada siempre se registra sobre una salida y hereda sus datos.</p></div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" disabled={busy || loading} onClick={() => startReturn()}><ArrowDownToLine size={16} /> Entrada de equipo</Button>
+        <Button variant="outline" disabled={busy || loading} onClick={() => startReturn()} title={openLoans.length ? 'Registrar la devolución de una salida' : 'No hay salidas en curso para devolver'}><ArrowDownToLine size={16} /> Entrada de equipo</Button>
         <Button disabled={busy || loading} onClick={startOut}><ArrowUpFromLine size={16} /> Salida de equipo</Button>
       </div>
     </div>
@@ -145,7 +155,7 @@ export default function Loans() {
           <tbody className="divide-y divide-gray-200 bg-white">
             {data.loans.map(loan => <tr key={loan.id} className="align-top hover:bg-gray-50">
               <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-primary-600">{loan.numberLabel}</td>
-              <td className="px-4 py-3 text-sm text-gray-900">{loan.product.name} <span className="text-gray-500">× {loan.quantity}</span>{loan.outNotes && <div className="text-xs text-gray-500 line-clamp-2" title={loan.outNotes}>{loan.outNotes}</div>}</td>
+              <td className="px-4 py-3 text-sm text-gray-900"><ul className="space-y-0.5">{loan.items.map(item => <li key={item.id}>{item.name} <span className="text-gray-500">× {item.quantity}</span></li>)}</ul>{loan.items.length > 1 && <div className="text-xs text-gray-500">{loan.items.length} equipos · {loan.units} unidades</div>}{loan.outNotes && <div className="text-xs text-gray-500 line-clamp-2" title={loan.outNotes}>{loan.outNotes}</div>}</td>
               <td className="px-4 py-3 text-sm"><div className="font-medium text-gray-900">{customerLabel(loan.customer)}</div>{loan.customer.businessName && loan.customer.businessName !== loan.customer.name && <div className="text-xs text-gray-500">{loan.customer.name}</div>}</td>
               <td className="px-4 py-3 text-sm text-gray-700">{loan.technician.name}</td>
               <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{formatDateTimeCO(loan.outAt)}<div className={`text-xs ${loan.status === 'OUT' && loan.days >= 30 ? 'font-medium text-amber-700' : 'text-gray-500'}`}>{loan.status === 'OUT' ? `hace ${loan.ageLabel}` : `duró ${loan.ageLabel}`}</div></td>
@@ -159,22 +169,33 @@ export default function Loans() {
     {data && <Pagination currentPage={page} totalPages={totalPages} totalCount={data.total} perPage={data.perPage} itemLabel="préstamos" />}
 
     <Dialog open={!!outDraft} onOpenChange={open => { if (!open && !busy) setOutDraft(null) }}><DialogContent>
-      <DialogHeader><DialogTitle>Salida de equipo</DialogTitle><DialogDescription>El equipo sale del inventario en préstamo a un cliente bajo la responsabilidad de un técnico.</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>Salida de equipo</DialogTitle><DialogDescription>Uno o varios equipos salen del inventario en préstamo a un cliente bajo la responsabilidad de un técnico. Todos se devuelven juntos en una sola entrada.</DialogDescription></DialogHeader>
       {outDraft && outErrors && <form onSubmit={e => { e.preventDefault(); void submitOut() }} className="space-y-4">
-        <div><label className="mb-1 block text-sm font-medium text-gray-700">Equipo <span className="text-red-500">*</span></label>
-          <SearchSelect aria-label="Equipo" placeholder="Buscar producto del catálogo…" value={outDraft.productId} onChange={id => setOutDraft({ ...outDraft, productId: id })} options={productOptions} invalid={attempted && !!outErrors.product} disabled={busy} />
-          {attempted && outErrors.product && <p role="alert" className="mt-1 text-xs text-red-700">{outErrors.product}</p>}</div>
+        <div>
+          <div className="mb-1 flex items-center justify-between"><span className="text-sm font-medium text-gray-700">Equipos <span className="text-red-500">*</span></span><Button type="button" size="sm" variant="outline" disabled={busy || outDraft.items.length >= 50} onClick={() => setOutDraft({ ...outDraft, items: [...outDraft.items, newLine()] })}><Plus size={14} /> Agregar equipo</Button></div>
+          <div className="space-y-2">{outDraft.items.map((line, index) => <div key={line.key} className="rounded-lg border border-gray-200 p-2">
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <SearchSelect aria-label={`Equipo ${index + 1}`} placeholder="Buscar producto del catálogo…" value={line.productId} onChange={id => patchLine(line.key, { productId: id })} options={productOptions} invalid={attempted && !!lineErrors[index]?.product} disabled={busy} />
+                {attempted && lineErrors[index]?.product && <p role="alert" className="mt-1 text-xs text-red-700">{lineErrors[index].product}</p>}
+              </div>
+              <div className="w-24 shrink-0">
+                <Input aria-label={`Cantidad del equipo ${index + 1}`} type="number" inputMode="numeric" min={1} step={1} value={line.quantity} disabled={busy} onChange={e => patchLine(line.key, { quantity: e.target.value })} className="text-sm" aria-invalid={attempted && !!lineErrors[index]?.quantity} />
+                {attempted && lineErrors[index]?.quantity && <p role="alert" className="mt-1 text-xs text-red-700">{lineErrors[index].quantity}</p>}
+              </div>
+              <button type="button" disabled={busy || outDraft.items.length <= 1} onClick={() => removeLine(line.key)} aria-label={`Quitar equipo ${index + 1}`} title={outDraft.items.length <= 1 ? 'La salida necesita al menos un equipo' : 'Quitar esta línea'} className="shrink-0 rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 size={16} /></button>
+            </div>
+          </div>)}</div>
+          <p className="mt-1 text-xs text-gray-500">{outDraft.items.length} equipo{outDraft.items.length === 1 ? '' : 's'} · {outDraft.items.reduce((sum, line) => sum + (/^\d+$/.test(line.quantity) ? Number(line.quantity) : 0), 0)} unidades. Cada línea es un producto distinto; usa la cantidad para repetir el mismo equipo.</p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div><label htmlFor="loan-quantity" className="mb-1 block text-sm font-medium text-gray-700">Cantidad <span className="text-red-500">*</span></label>
-            <Input id="loan-quantity" type="number" inputMode="numeric" min={1} step={1} value={outDraft.quantity} disabled={busy} onChange={e => setOutDraft({ ...outDraft, quantity: e.target.value })} className="text-sm" aria-invalid={attempted && !!outErrors.quantity} />
-            {attempted && outErrors.quantity && <p role="alert" className="mt-1 text-xs text-red-700">{outErrors.quantity}</p>}</div>
+          <div><label className="mb-1 block text-sm font-medium text-gray-700">Cliente <span className="text-red-500">*</span></label>
+            <SearchSelect aria-label="Cliente" placeholder="Buscar cliente…" value={outDraft.customerId} onChange={id => setOutDraft({ ...outDraft, customerId: id })} options={customerOptions} invalid={attempted && !!outErrors.customer} disabled={busy} />
+            {attempted && outErrors.customer && <p role="alert" className="mt-1 text-xs text-red-700">{outErrors.customer}</p>}</div>
           <div><label className="mb-1 block text-sm font-medium text-gray-700">Técnico encargado <span className="text-red-500">*</span></label>
             <SearchSelect aria-label="Técnico encargado" placeholder="Buscar técnico…" value={outDraft.technicianId} onChange={id => setOutDraft({ ...outDraft, technicianId: id })} options={technicianOptions} invalid={attempted && !!outErrors.technician} disabled={busy} />
             {attempted && outErrors.technician && <p role="alert" className="mt-1 text-xs text-red-700">{outErrors.technician}</p>}</div>
         </div>
-        <div><label className="mb-1 block text-sm font-medium text-gray-700">Cliente <span className="text-red-500">*</span></label>
-          <SearchSelect aria-label="Cliente" placeholder="Buscar cliente…" value={outDraft.customerId} onChange={id => setOutDraft({ ...outDraft, customerId: id })} options={customerOptions} invalid={attempted && !!outErrors.customer} disabled={busy} />
-          {attempted && outErrors.customer && <p role="alert" className="mt-1 text-xs text-red-700">{outErrors.customer}</p>}</div>
         <div><label htmlFor="loan-notes" className="mb-1 block text-sm font-medium text-gray-700">Observaciones</label>
           <Textarea id="loan-notes" rows={3} maxLength={1000} value={outDraft.notes} disabled={busy} onChange={e => setOutDraft({ ...outDraft, notes: e.target.value })} placeholder="Estado del equipo, accesorios entregados, serial…" className={inputClass} /></div>
         <PhotoUpload label="Fotos de salida" value={outDraft.photos} onChange={photos => setOutDraft({ ...outDraft, photos })} disabled={busy} />
@@ -183,13 +204,13 @@ export default function Loans() {
     </DialogContent></Dialog>
 
     <Dialog open={!!returnDraft} onOpenChange={open => { if (!open && !busy) setReturnDraft(null) }}><DialogContent>
-      <DialogHeader><DialogTitle>Entrada de equipo</DialogTitle><DialogDescription>Selecciona la orden de salida que se devuelve; el equipo vuelve al inventario.</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>Entrada de equipo</DialogTitle><DialogDescription>Toda entrada se registra sobre una orden de salida en curso: los equipos, las cantidades, el cliente y el técnico se toman de ella y todos vuelven al inventario.</DialogDescription></DialogHeader>
       {returnDraft && <form onSubmit={e => { e.preventDefault(); void submitReturn() }} className="space-y-4">
         <div><label className="mb-1 block text-sm font-medium text-gray-700">Orden de salida <span className="text-red-500">*</span></label>
-          {openLoanOptions.length ? <SearchSelect aria-label="Orden de salida" placeholder="Buscar préstamo en curso…" value={returnDraft.loanId} onChange={id => setReturnDraft({ ...returnDraft, loanId: id })} options={openLoanOptions} invalid={attempted && !returnDraft.loanId} disabled={busy} /> : <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-500">No hay equipos en préstamo.</p>}
-          {attempted && !returnDraft.loanId && <p role="alert" className="mt-1 text-xs text-red-700">Selecciona la orden de salida.</p>}</div>
+          {openLoanOptions.length ? <SearchSelect aria-label="Orden de salida" placeholder="Buscar por número, cliente o equipo…" value={returnDraft.loanId} onChange={id => setReturnDraft({ ...returnDraft, loanId: id })} options={openLoanOptions} invalid={attempted && !returnDraft.loanId} disabled={busy} /> : <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">No hay salidas en curso. Una entrada no puede registrarse sin una salida previa: primero registra la salida del equipo.</p>}
+          {attempted && !returnDraft.loanId && <p role="alert" className="mt-1 text-xs text-red-700">Selecciona la orden de salida que se devuelve; la entrada no puede registrarse sin ella.</p>}</div>
         {selectedReturn && <dl className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-lg bg-gray-50 p-3 text-sm sm:grid-cols-2">
-          <div><dt className="text-gray-500">Equipo</dt><dd className="font-medium text-gray-900">{selectedReturn.product.name} × {selectedReturn.quantity}</dd></div>
+          <div className="sm:col-span-2"><dt className="text-gray-500">Equipos que regresan ({selectedReturn.units} unidades)</dt><dd><ul className="font-medium text-gray-900">{selectedReturn.items.map(item => <li key={item.id}>{item.name} × {item.quantity}</li>)}</ul></dd></div>
           <div><dt className="text-gray-500">Cliente</dt><dd className="font-medium text-gray-900">{customerLabel(selectedReturn.customer)}</dd></div>
           <div><dt className="text-gray-500">Técnico encargado</dt><dd className="font-medium text-gray-900">{selectedReturn.technician.name}</dd></div>
           <div><dt className="text-gray-500">Salida</dt><dd className="font-medium text-gray-900">{formatDateTimeCO(selectedReturn.outAt)} <span className="text-gray-500">(hace {selectedReturn.ageLabel})</span></dd></div>
@@ -204,7 +225,7 @@ export default function Loans() {
     </DialogContent></Dialog>
 
     <Dialog open={!!gallery} onOpenChange={open => { if (!open) setGallery(null) }}><DialogContent>
-      <DialogHeader><DialogTitle>Fotos de {gallery?.numberLabel}</DialogTitle><DialogDescription>{gallery ? `${gallery.product.name} · ${customerLabel(gallery.customer)}` : ''}</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>Fotos de {gallery?.numberLabel}</DialogTitle><DialogDescription>{gallery ? `${gallery.itemsLabel} · ${customerLabel(gallery.customer)}` : ''}</DialogDescription></DialogHeader>
       {gallery && [['Salida', gallery.outPhotos, gallery.outAt], ['Entrada', gallery.returnPhotos, gallery.returnedAt]].map(([title, photos, at]) => (photos as string[]).length > 0 && <section key={title as string} className="mb-4">
         <h3 className="mb-2 text-sm font-semibold text-gray-900">{title as string} <span className="font-normal text-gray-500">· {formatDateTimeCO(at as string)}</span></h3>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{(photos as string[]).map(url => <a key={url} href={url} target="_blank" rel="noopener" className="block aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50"><img src={url} alt={`Foto de ${title}`} className="h-full w-full object-cover" /></a>)}</div>

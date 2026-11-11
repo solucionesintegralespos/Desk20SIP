@@ -5,7 +5,8 @@ import { loanInclude, serializeLoan } from '@/lib/inventory/loans'
 
 export const dynamic = 'force-dynamic'
 
-// Return of equipment: closes the selected exit order and restores the stock.
+// Return of equipment: always against an open exit order (equipment, units, customer and technician are inherited
+// from it); closes the order and restores the stock of every piece of equipment.
 export async function POST(request: Request) {
   try {
     const user = await staffUser()

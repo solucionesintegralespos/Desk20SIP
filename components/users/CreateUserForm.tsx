@@ -18,6 +18,7 @@ export default function CreateUserForm() {
     role: 'AGENT',
     phone: '',
     jobTitle: '',
+    canWriteOffInventory: false,
     location: '',
     avatar: '',
     dailyEntryGoal: null as number | null,
@@ -162,6 +163,11 @@ export default function CreateUserForm() {
           />
           <p className="text-sm text-gray-500 mt-1">Se imprime en la firma de las cotizaciones que cree este usuario</p>
         </div>
+
+        <label className="flex items-start gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={formData.canWriteOffInventory} onChange={(e) => setFormData({ ...formData, canWriteOffInventory: e.target.checked })} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+          <span><span className="font-medium">Puede registrar bajas de inventario</span><span className="block text-xs text-gray-500">Sin esta opción el usuario no verá ni podrá registrar bajas en Inventario. Los administradores siempre pueden.</span></span>
+        </label>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">

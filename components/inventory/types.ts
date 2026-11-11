@@ -3,7 +3,7 @@ export type StockProduct = {
   id: string; name: string; description: string | null; price: number; active: boolean
   stock: number; loaned: number; available: number; total: number; lastMovementAt: string | null
 }
-export type StockResponse = { products: StockProduct[]; totals: { products: number; units: number; loaned: number } }
+export type StockResponse = { products: StockProduct[]; totals: { products: number; units: number; loaned: number }; permissions: { writeOff: boolean } }
 
 export type MovementType = 'PURCHASE' | 'ENTRY' | 'WRITE_OFF' | 'COUNT' | 'LOAN_OUT' | 'LOAN_IN'
 export type Movement = {

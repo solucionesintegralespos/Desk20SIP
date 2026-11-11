@@ -10,13 +10,16 @@
 
 - Menú **Inventario** (`/dashboard/inventory`). Usa el catálogo de productos; desde aquí también se pueden crear productos nuevos.
 - Movimientos: **Compra** y **Entrada** suman; **Baja** resta; **Conteo** registra las unidades encontradas y el sistema guarda la diferencia como ajuste. Cada movimiento queda en el **Kardex** con cantidad firmada, saldo resultante, costo unitario, referencia, notas y usuario.
+- **Bajas** requieren permiso por usuario: en Usuarios, la casilla "Puede registrar bajas de inventario" (`User.canWriteOffInventory`, por defecto desactivada; migración `202611110002_user_write_off_permission.sql`). Los administradores siempre pueden. Sin permiso, el botón Baja y la opción del formulario no aparecen y la API responde 403 (`canWriteOffInventory` en `lib/roles.ts`).
+- Al crear un producto desde Inventario se puede marcar **Equipo de préstamo** directamente.
 - La existencia nunca queda negativa: el producto se bloquea por fila dentro de la transacción (`lib/inventory/stock.ts`, `applyMovement`), así que movimientos simultáneos se serializan y el que exceda el saldo se rechaza.
 
 ## Préstamos de equipos
 
 - Solo los productos marcados como **Equipo de préstamo** en el Catálogo (casilla del formulario de producto) aparecen en Préstamos y en el reporte de Equipos.
-- **Salida de equipo**: producto, cantidad, cliente, técnico encargado, notas y fotos (subidas con el mismo almacenamiento de adjuntos, hasta 10). Descuenta existencias (movimiento `LOAN_OUT`) y crea la orden `PR-0001`.
-- **Entrada de equipo**: se elige la orden de salida abierta, con notas y fotos; restaura existencias (`LOAN_IN`) y cierra la orden. Una orden no puede devolverse dos veces.
+- **Salida de equipo**: uno o varios equipos (producto y cantidad por línea, sin repetir producto; hasta 50 líneas), cliente, técnico encargado, notas y fotos (subidas con el mismo almacenamiento de adjuntos, hasta 10). Crea la orden `PR-0001` con sus líneas (`EquipmentLoanItem`) y descuenta las existencias de cada equipo (un movimiento `LOAN_OUT` por línea) en una sola transacción: si a alguno le faltan existencias, no se registra nada.
+- **Entrada de equipo**: siempre parte de una orden de salida en curso; no existe una entrada sin salida (el esquema exige `loanId` y la API responde 404 si la orden no existe). Los equipos, las cantidades, el cliente y el técnico se heredan de la salida y solo se agregan notas y fotos de la devolución. Restaura las existencias de todos los equipos (`LOAN_IN` por línea) y cierra la orden. Una orden no puede devolverse dos veces.
+- Migración `supabase/migrations/202611110001_loan_items.sql`: crea `EquipmentLoanItem`, convierte el producto y la cantidad de cada orden existente en una línea y elimina las columnas antiguas (idempotente).
 - **Equipos**: reporte de disponibles en bodega y prestados por producto, con cada préstamo abierto, su cliente, técnico y el tiempo transcurrido (resaltado a partir de 30 y 90 días).
 
 ## Pasajes en el cronograma

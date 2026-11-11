@@ -20,7 +20,7 @@ export async function accountingUser() {
 export async function staffUser() {
   const session = await getDashboardSession()
   if (!session) throw new ServiceError('No autorizado', 401)
-  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true, name: true, email: true, role: true, active: true } })
+  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true, name: true, email: true, role: true, active: true, canWriteOffInventory: true } })
   if (!user || !user.active) throw new ServiceError('No autorizado', 401)
   if (!isStaff(user.role)) throw new ServiceError('Acceso restringido al personal', 403)
   return user

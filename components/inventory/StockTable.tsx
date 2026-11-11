@@ -18,7 +18,7 @@ export default function StockTable() {
   const [onlyActive, setOnlyActive] = useState(true)
   const [movement, setMovement] = useState<{ product: StockProduct | null; type?: ManualMovementType } | null>(null)
   const [creating, setCreating] = useState(false)
-  const [draft, setDraft] = useState({ name: '', description: '', priceCents: null as number | null })
+  const [draft, setDraft] = useState({ name: '', description: '', priceCents: null as number | null, loanable: false })
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
@@ -38,9 +38,9 @@ export default function StockTable() {
     if (!draft.name.trim() || draft.priceCents == null || saving) { if (!draft.name.trim()) toast.error('Escribe el nombre del producto'); else if (draft.priceCents == null) toast.error('Indica el precio sugerido'); return }
     setSaving(true)
     try {
-      await api('/api/products', { method: 'POST', json: { name: draft.name.trim(), description: draft.description.trim(), price: draft.priceCents / 100, active: true } })
-      toast.success('Producto creado. Registra una compra o entrada para darle existencias.')
-      setCreating(false); setDraft({ name: '', description: '', priceCents: null }); void load()
+      await api('/api/products', { method: 'POST', json: { name: draft.name.trim(), description: draft.description.trim(), price: draft.priceCents / 100, active: true, loanable: draft.loanable } })
+      toast.success(draft.loanable ? 'Equipo de préstamo creado. Registra una compra o entrada para darle existencias.' : 'Producto creado. Registra una compra o entrada para darle existencias.')
+      setCreating(false); setDraft({ name: '', description: '', priceCents: null, loanable: false }); void load()
     } catch (e) { toast.error((e as Error).message) }
     finally { setSaving(false) }
   }
@@ -94,14 +94,14 @@ export default function StockTable() {
             <td className="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-700">{product.total}</td>
             <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{product.lastMovementAt ? formatDateTimeCO(product.lastMovementAt) : '—'}</td>
             <td className="px-4 py-3"><div className="flex flex-wrap gap-1">
-              {action(product, 'PURCHASE', 'Compra', ShoppingCart)}{action(product, 'ENTRY', 'Entrada', PackagePlus)}{action(product, 'WRITE_OFF', 'Baja', PackageMinus)}{action(product, 'COUNT', 'Conteo', ClipboardList)}
+              {action(product, 'PURCHASE', 'Compra', ShoppingCart)}{action(product, 'ENTRY', 'Entrada', PackagePlus)}{data?.permissions.writeOff && action(product, 'WRITE_OFF', 'Baja', PackageMinus)}{action(product, 'COUNT', 'Conteo', ClipboardList)}
               <Link href={`/dashboard/inventory?tab=kardex&product=${product.id}`} title="Ver kardex" className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-primary-600 hover:bg-gray-50"><History size={14} /> Kardex</Link>
             </div></td>
           </tr>)}
         </tbody>
       </table></div></div>}
 
-    {movement && <MovementDialog open onClose={() => setMovement(null)} onSaved={() => void load()} products={data?.products || []} product={movement.product} type={movement.type} />}
+    {movement && <MovementDialog open onClose={() => setMovement(null)} onSaved={() => void load()} products={data?.products || []} product={movement.product} type={movement.type} allowWriteOff={!!data?.permissions.writeOff} />}
 
     <Dialog open={creating} onOpenChange={value => { if (!value && !saving) setCreating(false) }}>
       <DialogContent>
@@ -110,6 +110,7 @@ export default function StockTable() {
           <label className="block text-sm font-medium text-gray-700">Nombre <span className="text-red-500">*</span><input required maxLength={200} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} className={`${inputClass} mt-1`} /></label>
           <label className="block text-sm font-medium text-gray-700">Descripción<textarea rows={2} maxLength={1000} value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} className={`${inputClass} mt-1`} /></label>
           <label className="block text-sm font-medium text-gray-700">Precio sugerido <span className="text-red-500">*</span><MoneyInput aria-label="Precio sugerido" valueCents={draft.priceCents} onChange={cents => setDraft({ ...draft, priceCents: cents })} className="mt-1 text-sm" placeholder="0" /></label>
+          <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" checked={draft.loanable} onChange={e => setDraft({ ...draft, loanable: e.target.checked })} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" /><span><span className="font-medium">Equipo de préstamo</span><span className="block text-xs text-gray-500">Aparece en Préstamos y en el reporte de Equipos para salidas a clientes.</span></span></label>
           <div className="flex justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => setCreating(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Guardando…' : 'Crear producto'}</Button></div>
         </form>
       </DialogContent>

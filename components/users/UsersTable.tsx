@@ -23,6 +23,7 @@ interface User {
   jobTitle?: string | null
   location: string | null
   active: boolean
+  canWriteOffInventory?: boolean
   createdAt: Date
   _count: {
     createdTickets: number
@@ -105,6 +106,7 @@ export default function UsersTable({ users, currentRole, currentUserId }: UsersT
                         {roleLabels[user.role]}
                       </span>
                       {!user.active && inactiveBadge}
+                      {(user.role === 'ADMIN' || user.canWriteOffInventory) && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800" title="Puede registrar bajas de inventario">Bajas</span>}
                     </div>
                   </div>
                 </div>

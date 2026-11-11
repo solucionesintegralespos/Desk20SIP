@@ -10,15 +10,18 @@ export async function GET() {
   try {
     await staffUser()
     const [products, openLoans] = await Promise.all([
-      prisma.product.findMany({ where: { OR: [{ active: true, loanable: true }, { loans: { some: { status: 'OUT' } } }] }, select: { id: true, name: true, stock: true, active: true }, orderBy: { name: 'asc' } }),
+      prisma.product.findMany({ where: { OR: [{ active: true, loanable: true }, { loanItems: { some: { loan: { status: 'OUT' } } } }] }, select: { id: true, name: true, stock: true, active: true }, orderBy: { name: 'asc' } }),
       prisma.equipmentLoan.findMany({ where: { status: 'OUT' }, include: {
+        items: { select: { productId: true, quantity: true } },
         customer: { select: { id: true, name: true, email: true, businessName: true } },
         technician: { select: { id: true, name: true, email: true } },
       }, orderBy: { outAt: 'asc' } }),
     ])
     const now = new Date()
-    const byProduct = new Map<string, typeof openLoans>()
-    for (const loan of openLoans) byProduct.set(loan.productId, [...(byProduct.get(loan.productId) || []), loan])
+    // One exit order can list several products: each product row shows the order with its own units.
+    type OpenLoan = (typeof openLoans)[number] & { quantity: number }
+    const byProduct = new Map<string, OpenLoan[]>()
+    for (const loan of openLoans) for (const item of loan.items) byProduct.set(item.productId, [...(byProduct.get(item.productId) || []), { ...loan, quantity: item.quantity }])
     const rows = products.map(product => {
       const loans = byProduct.get(product.id) || []
       return {

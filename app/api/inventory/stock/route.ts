@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { staffUser, serviceError, decimal } from '@/lib/accounting/server'
+import { canWriteOffInventory } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,7 +9,7 @@ export const dynamic = 'force-dynamic'
 // `loaned` is the sum of open loans and `total` the units the company owns.
 export async function GET(request: Request) {
   try {
-    await staffUser()
+    const user = await staffUser()
     const params = new URL(request.url).searchParams
     const q = (params.get('q') || '').trim().slice(0, 100)
     const onlyActive = params.get('active') === '1'
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
     }
     const [products, loans, lastMovements] = await Promise.all([
       prisma.product.findMany({ where, select: { id: true, name: true, description: true, price: true, active: true, stock: true }, orderBy: [{ active: 'desc' }, { name: 'asc' }] }),
-      prisma.equipmentLoan.groupBy({ by: ['productId'], where: { status: 'OUT' }, _sum: { quantity: true } }),
+      prisma.equipmentLoanItem.groupBy({ by: ['productId'], where: { loan: { status: 'OUT' } }, _sum: { quantity: true } }),
       prisma.inventoryMovement.groupBy({ by: ['productId'], _max: { createdAt: true } }),
     ])
     const loanedBy = new Map(loans.map(loan => [loan.productId, loan._sum.quantity ?? 0]))
@@ -32,6 +33,6 @@ export async function GET(request: Request) {
       }
     })
     const totals = { products: rows.length, units: rows.reduce((sum, row) => sum + row.stock, 0), loaned: rows.reduce((sum, row) => sum + row.loaned, 0) }
-    return Response.json({ products: rows, totals })
+    return Response.json({ products: rows, totals, permissions: { writeOff: canWriteOffInventory(user) } })
   } catch (error) { return serviceError(error) }
 }

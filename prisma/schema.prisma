@@ -46,6 +46,8 @@ model User {
   emailNotifications Boolean      @default(false)
   // Inactive users cannot sign in and are hidden from scheduling and assignment; data is kept.
   active             Boolean      @default(true)
+  // Permission to register inventory write-offs (bajas). Administrators always can.
+  canWriteOffInventory Boolean    @default(false)
   twoFactorEnabled   Boolean      @default(false)
   twoFactorSecret    String?
   // Job title printed under the signature of staff documents (quotes).
@@ -259,7 +261,7 @@ model Product {
   updatedAt   DateTime    @updatedAt
   quoteItems  QuoteItem[]
   movements   InventoryMovement[]
-  loans       EquipmentLoan[]
+  loanItems   EquipmentLoanItem[]
 
   @@index([active, name])
 }
@@ -306,12 +308,11 @@ enum LoanStatus {
 }
 
 // Equipment lent to a customer under a technician's responsibility, with photos at exit and return.
+// One exit order (salida) lists several pieces of equipment; the return (entrada) closes the whole order.
 model EquipmentLoan {
   id            String              @id @default(cuid())
   number        Int                 @unique @default(autoincrement())
-  productId     String
-  product       Product             @relation(fields: [productId], references: [id])
-  quantity      Int                 @default(1)
+  items         EquipmentLoanItem[]
   customerId    String
   customer      User                @relation("LoanCustomer", fields: [customerId], references: [id])
   technicianId  String
@@ -330,9 +331,22 @@ model EquipmentLoan {
   movements     InventoryMovement[]
 
   @@index([status, outAt])
-  @@index([productId, status])
   @@index([customerId])
   @@index([technicianId])
+}
+
+// A piece of equipment (product and units) listed on an exit order.
+model EquipmentLoanItem {
+  id        String        @id @default(cuid())
+  loanId    String
+  loan      EquipmentLoan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product       @relation(fields: [productId], references: [id])
+  quantity  Int           @default(1)
+  position  Int           @default(0)
+
+  @@index([loanId])
+  @@index([productId])
 }
 
 model Tax {

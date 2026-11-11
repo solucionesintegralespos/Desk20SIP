@@ -18,13 +18,13 @@ export async function GET(request: Request) {
     const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1)
     const where: Prisma.EquipmentLoanWhereInput = {
       ...(status === 'OUT' || status === 'RETURNED' ? { status } : {}),
-      ...(product ? { productId: product } : {}), ...(customer ? { customerId: customer } : {}), ...(technician ? { technicianId: technician } : {}),
+      ...(product ? { items: { some: { productId: product } } } : {}), ...(customer ? { customerId: customer } : {}), ...(technician ? { technicianId: technician } : {}),
     }
     if (q) {
       const digits = q.replace(/^pr-?/i, '').replace(/^0+/, '')
       where.OR = [
         ...(/^\d{1,9}$/.test(digits) ? [{ number: parseInt(digits, 10) }] : []),
-        { product: { name: { contains: q, mode: 'insensitive' } } },
+        { items: { some: { product: { name: { contains: q, mode: 'insensitive' } } } } },
         { customer: { OR: [{ name: { contains: q, mode: 'insensitive' } }, { businessName: { contains: q, mode: 'insensitive' } }] } },
         { technician: { name: { contains: q, mode: 'insensitive' } } },
       ]
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   } catch (error) { return serviceError(error) }
 }
 
-// Exit of equipment: the loan is opened and the stock discounted in one transaction.
+// Exit of equipment: one order with several pieces of equipment; the stock of each is discounted in one transaction.
 export async function POST(request: Request) {
   try {
     const user = await staffUser()

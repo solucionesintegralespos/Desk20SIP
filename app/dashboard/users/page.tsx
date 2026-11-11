@@ -53,6 +53,7 @@ export default async function UsersPage({
         jobTitle: true,
         location: true,
         active: true,
+        canWriteOffInventory: true,
         createdAt: true,
         _count: {
           select: {

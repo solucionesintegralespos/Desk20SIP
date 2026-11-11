@@ -20,6 +20,7 @@ interface EditUserModalProps {
     avatar: string | null
     dailyEntryGoal: number | null
     dailyClosureGoal: number | null
+    canWriteOffInventory?: boolean
   }
   onClose: () => void
 }
@@ -35,6 +36,7 @@ export default function EditUserModal({ user, onClose }: EditUserModalProps) {
     phone: user.phone || '',
     jobTitle: user.jobTitle || '',
     location: user.location || '',
+    canWriteOffInventory: user.canWriteOffInventory === true,
     newPassword: '',
     avatar: user.avatar || '',
     dailyEntryGoal: user.dailyEntryGoal,
@@ -63,6 +65,7 @@ export default function EditUserModal({ user, onClose }: EditUserModalProps) {
         phone: formData.phone,
         jobTitle: formData.jobTitle,
         location: formData.location,
+        canWriteOffInventory: formData.canWriteOffInventory,
         avatar: formData.avatar,
         dailyEntryGoal: formData.dailyEntryGoal,
         dailyClosureGoal: formData.dailyClosureGoal,
@@ -216,6 +219,11 @@ export default function EditUserModal({ user, onClose }: EditUserModalProps) {
                 placeholder="Se imprime en la firma de las cotizaciones"
               />
             </div>
+
+            <label className="flex items-start gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={formData.canWriteOffInventory} disabled={formData.role === 'ADMIN'} onChange={(e) => setFormData({ ...formData, canWriteOffInventory: e.target.checked })} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+              <span><span className="font-medium">Puede registrar bajas de inventario</span><span className="block text-xs text-gray-500">{formData.role === 'ADMIN' ? 'Los administradores siempre pueden registrar bajas.' : 'Sin esta opción el usuario no verá ni podrá registrar bajas en Inventario.'}</span></span>
+            </label>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

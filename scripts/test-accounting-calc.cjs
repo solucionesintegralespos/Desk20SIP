@@ -71,6 +71,11 @@ assert.ok(roles.canUseAccounting('ACCOUNTING')); assert.ok(roles.canUseAccountin
 assert.ok(roles.isManagedRole('ACCOUNTING')); assert.ok(!roles.isManagedRole('CUSTOMER')); assert.ok(!roles.isManagedRole('ROOT'));
 assert.deepEqual(roles.STAFF_ROLES, ['ADMIN', 'AGENT', 'ACCOUNTING']); assert.deepEqual(roles.ADMIN_ROLES, ['ADMIN']); assert.deepEqual(roles.ACCOUNTING_ROLES, ['ADMIN', 'ACCOUNTING']);
 assert.equal(roles.roleLabels.ACCOUNTING, 'Contabilidad');
+// Inventory write-offs: administrators always; other staff only with the user flag; never customers.
+assert.ok(roles.canWriteOffInventory({ role: 'ADMIN', canWriteOffInventory: false }));
+assert.ok(roles.canWriteOffInventory({ role: 'AGENT', canWriteOffInventory: true })); assert.ok(roles.canWriteOffInventory({ role: 'ACCOUNTING', canWriteOffInventory: true }));
+assert.ok(!roles.canWriteOffInventory({ role: 'AGENT', canWriteOffInventory: false })); assert.ok(!roles.canWriteOffInventory({ role: 'AGENT' }));
+assert.ok(!roles.canWriteOffInventory({ role: 'CUSTOMER', canWriteOffInventory: true })); assert.ok(!roles.canWriteOffInventory(null));
 
 // Pasajes: events on or before the paid-until date are frozen; a fare exists only with a positive amount.
 assert.ok(schedule.fareLocked('2026-10-31', '2026-10-31')); assert.ok(schedule.fareLocked('2026-09-01', '2026-10-31'));

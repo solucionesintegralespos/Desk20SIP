@@ -16,7 +16,7 @@ const typeOptions: Array<{ value: ManualMovementType; label: string; help: strin
   { value: 'COUNT', label: 'Conteo', help: 'Conteo físico: escribe las unidades encontradas; el sistema registra la diferencia.' },
 ]
 
-export function MovementDialog({ open, onClose, onSaved, products, product, type: presetType }: {
+export function MovementDialog({ open, onClose, onSaved, products, product, type: presetType, allowWriteOff = true }: {
   open: boolean
   onClose: () => void
   onSaved: () => void
@@ -24,7 +24,10 @@ export function MovementDialog({ open, onClose, onSaved, products, product, type
   /** Fixed product when opened from a row; otherwise the user picks one. */
   product?: StockProduct | null
   type?: ManualMovementType
+  /** Write-offs (bajas) are a per-user permission; without it the option is not offered. */
+  allowWriteOff?: boolean
 }) {
+  const availableTypes = allowWriteOff ? typeOptions : typeOptions.filter(option => option.value !== 'WRITE_OFF')
   const [productId, setProductId] = useState(product?.id || '')
   const [type, setType] = useState<ManualMovementType>(presetType || 'PURCHASE')
   const [quantity, setQuantity] = useState('')
@@ -80,7 +83,7 @@ export function MovementDialog({ open, onClose, onSaved, products, product, type
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-medium text-gray-700">Tipo de movimiento
             <select value={type} onChange={e => setType(e.target.value as ManualMovementType)} className={`${inputClass} mt-1`}>
-              {typeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {availableTypes.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
           <label className="text-sm font-medium text-gray-700">{type === 'COUNT' ? 'Unidades encontradas' : 'Cantidad'} <span className="text-red-500">*</span>

@@ -56,8 +56,11 @@ export async function PATCH(
     if (data.jobTitle !== undefined && data.jobTitle !== null && (typeof data.jobTitle !== 'string' || data.jobTitle.trim().length > 100)) return NextResponse.json({ error: 'El cargo no puede superar 100 caracteres' }, { status: 400 })
 
     if (role && !isManagedRole(role)) return NextResponse.json({ error: 'Los clientes se gestionan en Clientes' }, { status: 400 })
+    if (data.canWriteOffInventory !== undefined && typeof data.canWriteOffInventory !== 'boolean') return NextResponse.json({ error: 'Permiso de bajas inválido' }, { status: 400 })
 
     const updateData: any = {
+      // Inventory write-off permission: only changed when the request includes it (the Users form does; Mi perfil does not).
+      ...(data.canWriteOffInventory !== undefined ? { canWriteOffInventory: data.canWriteOffInventory } : {}),
       avatar: data.avatar === '' ? null : data.avatar,
       dailyEntryGoal: data.dailyEntryGoal,
       dailyClosureGoal: data.dailyClosureGoal,
@@ -91,6 +94,7 @@ export async function PATCH(
         phone: true,
         jobTitle: true,
         location: true,
+        canWriteOffInventory: true,
       }
     })
 

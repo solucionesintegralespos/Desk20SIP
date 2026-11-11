@@ -4,6 +4,7 @@ import { staffUser, serviceError, ServiceError, readJson, decimal } from '@/lib/
 import { movementSchema, applyMovement, movementTypeLabels } from '@/lib/inventory/stock'
 import { creatorsById } from '@/lib/accounting/creators'
 import { dailyRange } from '@/lib/daily-filter'
+import { canWriteOffInventory } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 const PER_PAGE = 50
@@ -48,6 +49,8 @@ export async function POST(request: Request) {
     const parsed = movementSchema.safeParse(await readJson(request))
     if (!parsed.success) throw new ServiceError(parsed.error.issues.map(issue => issue.message).join('. '))
     const input = parsed.data
+    // Write-offs are a per-user permission granted in Usuarios; administrators always have it.
+    if (input.type === 'WRITE_OFF' && !canWriteOffInventory(user)) throw new ServiceError('No tienes permiso para registrar bajas de inventario. Un administrador puede habilitarlo en Usuarios.', 403)
     const result = await prisma.$transaction(tx => applyMovement(tx, {
       productId: input.productId, type: input.type, quantity: input.quantity,
       unitCostCents: input.unitCost == null ? null : Math.round(input.unitCost * 100),

@@ -18,6 +18,8 @@ export const isAdmin = (role?: string | null) => role === 'ADMIN'
 export const isStaff = (role?: string | null) => role === 'ADMIN' || role === 'AGENT' || role === 'ACCOUNTING'
 /** Accounting modules: catalog, quotes and billing accounts. */
 export const canUseAccounting = (role?: string | null) => role === 'ADMIN' || role === 'ACCOUNTING'
+/** Inventory write-offs (bajas): administrators always, other staff only when the user flag is on. */
+export const canWriteOffInventory = (user?: { role?: string | null; canWriteOffInventory?: boolean | null } | null) => !!user && (isAdmin(user.role) || (isStaff(user.role) && user.canWriteOffInventory === true))
 
 export const roleLabels: Record<string, string> = {
   ADMIN: 'Administrador',
