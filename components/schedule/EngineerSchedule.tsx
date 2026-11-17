@@ -10,7 +10,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { searchText } from '@/components/support/SearchFilter';
 import { colombiaHolidays } from '@/lib/colombia-holidays';
 import { serviceDay } from '@/lib/support/order-display';
-import { eventSchema, eventTechIds, statusLabels, timeLabel, repeatDates, repeatConflict, weekdayLabels, fareLocked, fareStatusLabels, hasFare, type RepeatRule, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
+import { eventSchema, eventTechIds, eventFares, statusLabels, timeLabel, repeatDates, repeatConflict, weekdayLabels, fareLocked, fareStatusLabels, hasFare, type RepeatRule, type ScheduleEvent, type SchedulePerson } from '@/lib/schedule';
 import { MoneyInput } from '@/components/accounting/MoneyInput';
 import { formatMoney, formatDateCO } from '@/lib/accounting/format';
 import TechnicianPicker from '@/components/tickets/TechnicianPicker';
@@ -208,7 +208,7 @@ export default function EngineerSchedule() {
           const pending = event.status === 'planned' || event.status === 'in_progress';
           return <div key={event.id} className={`schedule-event schedule-${event.status} ${dragging === event.id ? 'schedule-dragging' : ''}`} draggable
             onDragStart={drag => { drag.dataTransfer.setData('text/plain', JSON.stringify({ id: event.id, from: person.id })); drag.dataTransfer.effectAllowed = 'move'; setDragging(event.id); }}
-            onDragEnd={() => { setDragging(null); setDropTarget(null); }}><button type="button" onClick={() => open(event)} className="schedule-event-open"><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span>{eventTechIds(event).length > 1 && <span className="block text-[10px] mt-1" title={eventTechIds(event).map(id => name(data.engineers.find(person => person.id === id))).join(', ')}>Compartido · {eventTechIds(event).length} ingenieros</span>}<span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span>{hasFare(event) && <span className="block text-[10px] mt-1 opacity-80" title={`Pasajes: ${event.fareReason || ''}`}>🚌 {formatMoney(event.fareCents!)}</span>}</button>{pending && <button type="button" className="schedule-done" disabled={completing === event.id} onClick={() => void complete(event)} aria-label={`Marcar «${event.title}» como completada`}><Check size={11} aria-hidden="true" />{completing === event.id ? 'Guardando…' : 'Listo'}</button>}</div>;
+            onDragEnd={() => { setDragging(null); setDropTarget(null); }}><button type="button" onClick={() => open(event)} className="schedule-event-open"><span className="font-semibold block">{event.title}</span>{event.clientId && <span className="block mt-1">{name(clients.get(event.clientId))}</span>}<span className="block mt-2 opacity-80">{timeLabel(event.start)}</span>{eventTechIds(event).length > 1 && <span className="block text-[10px] mt-1" title={eventTechIds(event).map(id => name(data.engineers.find(person => person.id === id))).join(', ')}>Compartido · {eventTechIds(event).length} ingenieros</span>}<span className="block text-[10px] mt-1">{statusLabels[event.status]}{overlap ? ' · Misma hora de inicio' : ''}</span>{hasFare(event) && <span className="block text-[10px] mt-1 opacity-80" title={`Pasajes: ${event.fareReason || ''}`}>🚌 {formatMoney(event.fareCents!)}{Object.keys(eventFares(event)).length > 1 ? ` × ${Object.keys(eventFares(event)).length}` : ''}</span>}</button>{pending && <button type="button" className="schedule-done" disabled={completing === event.id} onClick={() => void complete(event)} aria-label={`Marcar «${event.title}» como completada`}><Check size={11} aria-hidden="true" />{completing === event.id ? 'Guardando…' : 'Listo'}</button>}</div>;
         })}{!events.length && <p className="schedule-empty">{allEvents.length ? 'Sin coincidencias' : 'Sin programación'}</p>}<button type="button" className="schedule-add" aria-label={`Añadir evento para ${name(person)} el ${day}`} onClick={() => open(undefined, person.id, day)}><Plus size={12} />Añadir</button></div></td>;
       })}</tr>)}</tbody></table></div>
       {!engineers.length && <p className="p-8 text-center text-slate-500">No hay ingenieros para mostrar.</p>}
@@ -232,6 +232,20 @@ export default function EngineerSchedule() {
           <Field label="Pasajes (valor)"><MoneyInput aria-label="Pasajes (valor)" valueCents={draft.fareCents} disabled={fareFrozen} placeholder="0" onChange={fareCents => patch({ fareCents })} /></Field>
           <Field label="Motivo del pasaje" required={!!draft.fareCents} error={fareReasonMissing && !fareFrozen ? 'Indica el motivo del pasaje.' : undefined}><Input maxLength={300} value={draft.fareReason} disabled={fareFrozen} placeholder="Ej.: visita a cliente, traslado de equipos" onChange={event => patch({ fareReason: event.target.value })} /></Field>
         </div>
+        {!!draft.fareCents && (draft.techIds?.length || 0) > 1 && (() => {
+          // Each engineer gets a fare of this value; the saved event tells which ones still have it.
+          const original = data.events.find(event => event.id === draft.id);
+          const fares = original ? eventFares(original) : null;
+          const before = original ? eventTechIds(original) : [];
+          return <div className="text-xs text-slate-600 space-y-1">
+            <p>Un pasaje de {formatMoney(draft.fareCents)} por cada ingeniero ({draft.techIds!.length} en total). En Pasajes cada uno se acepta, elimina o paga por separado.</p>
+            {fares && <ul className="flex flex-wrap gap-x-3 gap-y-1">{draft.techIds!.map(id => {
+              const fare = fares[id];
+              const state = fare ? fareStatusLabels[fare.status] : before.includes(id) ? 'Eliminado en el reporte' : 'Quedará pendiente al guardar';
+              return <li key={id}><span className="font-medium text-slate-800">{name(data.engineers.find(person => person.id === id))}</span>: {state}</li>;
+            })}</ul>}
+          </div>;
+        })()}
       </div>
       </div>
       {!draft.id && <div role="tabpanel" id="schedule-panel-repeat" aria-labelledby="schedule-tab-repeat" hidden={tab !== 'repeat'} className="detail-stack">

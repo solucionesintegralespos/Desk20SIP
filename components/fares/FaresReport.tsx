@@ -12,7 +12,8 @@ import { canUseAccounting, isAdmin } from '@/lib/roles'
 import { serviceDay } from '@/lib/support/order-display'
 
 type Person = { id: string; name: string }
-type FareRow = { id: string; date: string; start: string; title: string; reason: string; amountCents: number; status: FareStatus; paidAt: string | null; revision: number; technicians: Person[]; customer: Person | null }
+// One row per engineer and event: a shared event shows one fare per engineer, each managed on its own.
+type FareRow = { id: string; techId: string; key: string; date: string; start: string; title: string; reason: string; amountCents: number; status: FareStatus; paidAt: string | null; revision: number; technician: Person; technicians: Person[]; customer: Person | null }
 type Totals = { count: number; totalCents: number; pendingCents: number; acceptedCents: number; paidCents: number }
 type Response = { from: string; to: string; paidUntil: string | null; canManage: boolean; fares: FareRow[]; totals: Totals; technicians: Person[] }
 
@@ -50,8 +51,8 @@ export default function FaresReport() {
     if (!acting || busy) return
     setBusy(true)
     try {
-      await api(`/api/fares/${encodeURIComponent(acting.row.id)}`, { method: 'POST', json: { action: acting.action, revision: acting.row.revision } })
-      toast.success(acting.action === 'accept' ? 'Pasaje aceptado' : 'Pasaje eliminado del evento')
+      await api(`/api/fares/${encodeURIComponent(acting.row.id)}`, { method: 'POST', json: { action: acting.action, techId: acting.row.techId, revision: acting.row.revision } })
+      toast.success(acting.action === 'accept' ? `Pasaje de ${acting.row.technician.name} aceptado` : `Pasaje de ${acting.row.technician.name} eliminado`)
       setActing(null); await load()
     } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
   }
@@ -75,7 +76,7 @@ export default function FaresReport() {
     <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3"><Bus className="text-primary-600" /> Pasajes</h1>
-        <p className="text-gray-600 mt-1">{canManage ? 'Pasajes registrados en los eventos de la programación, con su total y estado de pago.' : 'Tus pasajes registrados en los eventos de la programación, con su total y estado de pago. Contabilidad los acepta y los marca como pagados.'}</p>
+        <p className="text-gray-600 mt-1">{canManage ? 'Pasajes registrados en los eventos de la programación, un pasaje por ingeniero, con su total y estado de pago.' : 'Tus pasajes registrados en los eventos de la programación, con su total y estado de pago. Contabilidad los acepta y los marca como pagados.'}</p>
       </div>
       <a href={`/api/fares/export?${query}`} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"><Download className="h-4 w-4" /> Exportar a Excel</a>
     </div>
@@ -111,26 +112,32 @@ export default function FaresReport() {
     {loading && !data ? <div className="bg-white rounded-lg shadow p-12 text-center text-gray-500">Cargando pasajes…</div>
       : rows.length === 0 ? <div className="bg-white rounded-lg shadow p-12 text-center"><Bus className="h-10 w-10 mx-auto text-gray-300 mb-3" /><p className="text-gray-500 text-lg">No hay pasajes en este período</p><p className="text-gray-400 mt-2">Los pasajes se registran en cada evento de la programación.</p></div>
       : <div className={`bg-white rounded-lg shadow overflow-hidden ${loading ? 'opacity-60' : ''}`}><div className="overflow-x-auto"><table className="w-full">
-        <thead className="bg-gray-50"><tr>{['Fecha', 'Ingeniero(s)', 'Cliente', 'Evento', 'Motivo', 'Valor', 'Estado', ...(canManage ? ['Acciones'] : [])].map(label => <th key={label} scope="col" className={`px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider ${label === 'Valor' ? 'text-right' : 'text-left'}`}>{label}</th>)}</tr></thead>
-        <tbody className="divide-y divide-gray-200">{rows.map(row => <tr key={row.id} className="hover:bg-gray-50 align-top">
+        <thead className="bg-gray-50"><tr>{['Fecha', 'Ingeniero', 'Cliente', 'Evento', 'Motivo', 'Valor', 'Estado', ...(canManage ? ['Acciones'] : [])].map(label => <th key={label} scope="col" className={`px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider ${label === 'Valor' ? 'text-right' : 'text-left'}`}>{label}</th>)}</tr></thead>
+        <tbody className="divide-y divide-gray-200">{rows.map(row => {
+          const others = row.technicians.filter(t => t.id !== row.techId)
+          return <tr key={row.key} className="hover:bg-gray-50 align-top">
           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{dayLabel(row.date)}<div className="text-xs text-gray-500">{timeLabel(row.start)}</div></td>
-          <td className="px-4 py-3 text-sm text-gray-900">{row.technicians.map(t => t.name).join(', ')}</td>
+          <td className="px-4 py-3 text-sm text-gray-900">{row.technician.name}{others.length > 0 && <div className="text-xs text-gray-500" title={others.map(t => t.name).join(', ')}>Evento compartido con {others.length === 1 ? others[0].name : `${others.length} ingenieros más`}</div>}</td>
           <td className="px-4 py-3 text-sm text-gray-700">{row.customer?.name || <span className="text-gray-400">—</span>}</td>
           <td className="px-4 py-3 text-sm text-gray-900">{row.title}</td>
           <td className="px-4 py-3 text-sm text-gray-700 max-w-xs"><span className="line-clamp-2" title={row.reason}>{row.reason}</span></td>
           <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold tabular-nums text-gray-900">{formatMoney(row.amountCents)}</td>
           <td className="px-4 py-3 whitespace-nowrap text-sm"><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusClass[row.status]}`}>{fareStatusLabels[row.status]}</span>{row.paidAt && <div className="text-xs text-gray-500 mt-1">{formatDateTimeCO(row.paidAt)}</div>}</td>
           {canManage && <td className="px-4 py-3 whitespace-nowrap"><div className="flex gap-1">
-            <button type="button" disabled={row.status !== 'pending' || busy} onClick={() => setActing({ row, action: 'accept' })} title={row.status === 'pending' ? 'Aceptar pasaje' : 'Ya fue aceptado o pagado'} aria-label={`Aceptar pasaje de ${row.title}`} className="p-2 rounded-lg text-gray-600 hover:bg-green-50 hover:text-green-700 disabled:opacity-40 disabled:cursor-not-allowed"><Check className="h-4 w-4" /></button>
-            <button type="button" disabled={row.status === 'paid' || busy} onClick={() => setActing({ row, action: 'remove' })} title={row.status === 'paid' ? 'Un pasaje pagado no se puede eliminar' : 'Eliminar pasaje del evento'} aria-label={`Eliminar pasaje de ${row.title}`} className="p-2 rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 className="h-4 w-4" /></button>
+            <button type="button" disabled={row.status !== 'pending' || busy} onClick={() => setActing({ row, action: 'accept' })} title={row.status === 'pending' ? `Aceptar el pasaje de ${row.technician.name}` : 'Ya fue aceptado o pagado'} aria-label={`Aceptar pasaje de ${row.technician.name} en ${row.title}`} className="p-2 rounded-lg text-gray-600 hover:bg-green-50 hover:text-green-700 disabled:opacity-40 disabled:cursor-not-allowed"><Check className="h-4 w-4" /></button>
+            <button type="button" disabled={row.status === 'paid' || busy} onClick={() => setActing({ row, action: 'remove' })} title={row.status === 'paid' ? 'Un pasaje pagado no se puede eliminar' : `Eliminar el pasaje de ${row.technician.name}${others.length ? ' (los demás ingenieros conservan el suyo)' : ''}`} aria-label={`Eliminar pasaje de ${row.technician.name} en ${row.title}`} className="p-2 rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 className="h-4 w-4" /></button>
           </div></td>}
-        </tr>)}</tbody>
+        </tr>})}</tbody>
         <tfoot className="bg-gray-50"><tr><td colSpan={5} className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total</td><td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-gray-900">{formatMoney(totals?.totalCents || 0)}</td><td colSpan={canManage ? 2 : 1} /></tr></tfoot>
       </table></div></div>}
 
     <Dialog open={!!acting} onOpenChange={open => { if (!open && !busy) setActing(null) }}>
       <DialogContent>
-        <DialogHeader><DialogTitle>{acting?.action === 'accept' ? 'Aceptar pasaje' : 'Eliminar pasaje'}</DialogTitle><DialogDescription>{acting && <>{acting.action === 'accept' ? 'Se aceptará el pasaje de' : 'Se quitará el pasaje de'} <strong>{formatMoney(acting.row.amountCents)}</strong> del evento «{acting.row.title}» del {dayLabel(acting.row.date)}{acting.action === 'remove' ? '. El evento se conserva sin pasaje.' : '.'}</>}</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{acting?.action === 'accept' ? 'Aceptar pasaje' : 'Eliminar pasaje'}</DialogTitle><DialogDescription>{acting && (() => {
+          const others = acting.row.technicians.filter(t => t.id !== acting.row.techId)
+          return <>{acting.action === 'accept' ? 'Se aceptará el pasaje de' : 'Se quitará el pasaje de'} <strong>{formatMoney(acting.row.amountCents)}</strong> de <strong>{acting.row.technician.name}</strong> en el evento «{acting.row.title}» del {dayLabel(acting.row.date)}.
+            {acting.action === 'remove' && (others.length ? <> El evento se conserva y {others.length === 1 ? `${others[0].name} conserva su pasaje` : `los otros ${others.length} ingenieros conservan el suyo`}.</> : ' El evento se conserva sin pasaje.')}</>
+        })()}</DialogDescription></DialogHeader>
         <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={busy} onClick={() => setActing(null)}>Cancelar</Button><Button disabled={busy} onClick={() => void act()}>{busy ? <><Loader2 size={16} className="animate-spin" /> Guardando…</> : acting?.action === 'accept' ? 'Aceptar' : 'Eliminar'}</Button></div>
       </DialogContent>
     </Dialog>

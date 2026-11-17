@@ -17,10 +17,11 @@ export async function GET(request: Request) {
     const total = rows.reduce((sum, row) => sum + row.amountCents, 0) / 100
     const file = xlsx({
       name: 'Pasajes',
-      columns: [{ header: 'Fecha', width: 12 }, { header: 'Hora', width: 8 }, { header: 'Ingeniero(s)', width: 28 }, { header: 'Cliente', width: 28 }, { header: 'Evento', width: 32 }, { header: 'Motivo', width: 32 }, { header: 'Valor', width: 14 }, { header: 'Estado', width: 12 }, { header: 'Fecha de pago', width: 20 }],
+      // One row per engineer: a shared event appears once per engineer who has the fare.
+      columns: [{ header: 'Fecha', width: 12 }, { header: 'Hora', width: 8 }, { header: 'Ingeniero', width: 28 }, { header: 'Compartido con', width: 28 }, { header: 'Cliente', width: 28 }, { header: 'Evento', width: 32 }, { header: 'Motivo', width: 32 }, { header: 'Valor', width: 14 }, { header: 'Estado', width: 12 }, { header: 'Fecha de pago', width: 20 }],
       rows: [
-        ...rows.map(row => [row.date, row.start, row.technicians.map(t => t.name).join(', '), row.customer?.name || '', row.title, row.reason, row.amountCents / 100, fareStatusLabels[row.status], row.paidAt ? formatDateTimeCO(row.paidAt) : '']),
-        ['Total', '', '', '', '', '', total, '', ''],
+        ...rows.map(row => [row.date, row.start, row.technician.name, row.technicians.filter(t => t.id !== row.techId).map(t => t.name).join(', '), row.customer?.name || '', row.title, row.reason, row.amountCents / 100, fareStatusLabels[row.status], row.paidAt ? formatDateTimeCO(row.paidAt) : '']),
+        ['Total', '', '', '', '', '', '', total, '', ''],
       ],
     })
     return new Response(new Uint8Array(file), { headers: {

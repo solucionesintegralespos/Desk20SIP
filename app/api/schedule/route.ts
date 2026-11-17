@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { serviceDay } from '@/lib/support/order-display';
 import { serviceUser, serviceError, ServiceError } from '@/lib/support/server';
-import { eventSchema, eventTechIds, repeatSchema, repeatDates, repeatConflict, fareLocked, type FareStatus, type ScheduleEvent } from '@/lib/schedule';
+import { eventSchema, eventTechIds, eventFares, fareSummary, repeatSchema, repeatDates, repeatConflict, fareLocked, type FareStatus, type ScheduleEvent, type TechFare } from '@/lib/schedule';
 import { getFaresPaidUntil } from '@/lib/fares';
 import { formatDateCO } from '@/lib/accounting/format';
 import { randomUUID } from 'crypto';
@@ -34,9 +34,9 @@ export async function GET(request: Request) {
   } catch (error) { return serviceError(error); }
 }
 
-// Fare fields as stored on the event. Status and payment date are never taken from the client.
-type FareFields = { fareCents: number | null; fareReason: string; fareStatus?: FareStatus; farePaidAt?: string | null };
-type StoredEvent = Partial<ScheduleEvent> & { date?: string };
+// Fare fields as stored on the event. Status, payment date and the per-engineer map are never taken from the client.
+type FareFields = { fareCents: number | null; fareReason: string; fareStatus?: FareStatus; farePaidAt?: string | null; fares?: Record<string, TechFare> };
+type StoredEvent = Partial<ScheduleEvent> & { date?: string; techId?: string };
 const normalizeFare = (input: { fareCents?: number | null; fareReason?: string }): { fareCents: number | null; fareReason: string } => {
   const cents = typeof input.fareCents === 'number' && input.fareCents > 0 ? Math.round(input.fareCents) : null;
   const reason = (input.fareReason || '').trim();
@@ -46,17 +46,32 @@ const normalizeFare = (input: { fareCents?: number | null; fareReason?: string }
 const paidMessage = (paidUntil: string) => `Los pasajes hasta ${formatDateCO(`${paidUntil}T12:00:00-05:00`)} ya fueron pagados y no se pueden modificar`;
 
 /**
- * Merges the fare of an incoming event with what is stored: events dated on or before the
- * paid-until cutoff keep their fare untouched; a changed accepted fare goes back to pending.
+ * Merges the fare of an incoming event with what is stored. Every assigned engineer gets their own
+ * fare (same value): engineers who already had one keep its status, engineers added to the event
+ * get a pending one, and engineers whose fare was removed from the report stay without it.
+ * Events dated on or before the paid-until cutoff keep their fare untouched; a changed fare
+ * (value or reason) starts over as pending for every engineer.
  */
-function resolveFare(incoming: { fareCents: number | null; fareReason: string }, newDate: string, previous: StoredEvent | null, paidUntil: string | null): FareFields {
+function resolveFare(incoming: { fareCents: number | null; fareReason: string }, newDate: string, techIds: string[], previous: StoredEvent | null, paidUntil: string | null): FareFields {
   const stored = previous ? normalizeFareLoose(previous) : null;
   const changed = !stored ? !!incoming.fareCents : stored.fareCents !== incoming.fareCents || stored.fareReason !== incoming.fareReason;
   const locked = fareLocked(newDate, paidUntil) || (!!previous?.date && fareLocked(previous.date, paidUntil));
   if (locked && changed) throw new ServiceError(paidMessage(paidUntil!));
   if (!incoming.fareCents) return { fareCents: null, fareReason: '' };
-  if (!changed && previous) return { fareCents: incoming.fareCents, fareReason: incoming.fareReason, fareStatus: previous.fareStatus || 'pending', farePaidAt: previous.farePaidAt ?? null };
-  return { fareCents: incoming.fareCents, fareReason: incoming.fareReason, fareStatus: 'pending', farePaidAt: null };
+  let fares: Record<string, TechFare>;
+  if (!changed && previous?.techId) {
+    const kept = eventFares(previous as ScheduleEvent), before = eventTechIds(previous as ScheduleEvent);
+    fares = {};
+    for (const id of techIds) {
+      if (kept[id]) fares[id] = kept[id];
+      else if (!before.includes(id) && !locked) fares[id] = { status: 'pending', paidAt: null };
+    }
+    // Every engineer's fare was removed from the report: the event keeps no fare.
+    if (!Object.keys(fares).length) return { fareCents: null, fareReason: '' };
+  } else {
+    fares = Object.fromEntries(techIds.map(id => [id, { status: 'pending', paidAt: null } as TechFare]));
+  }
+  return { fareCents: incoming.fareCents, fareReason: incoming.fareReason, fares, ...fareSummary(fares) };
 }
 const normalizeFareLoose = (event: StoredEvent) => ({ fareCents: typeof event.fareCents === 'number' && event.fareCents > 0 ? event.fareCents : null, fareReason: event.fareCents && event.fareCents > 0 ? (event.fareReason || '').trim() : '' });
 
@@ -88,7 +103,7 @@ export async function POST(request: Request) {
           const reason = repeatConflict(occupied, date, base.start, techIds);
           if (reason) { skipped.push({ date, reason }); continue; }
           // Each occurrence carries the fare as pending, except dates already paid (no fare allowed there).
-          const occurrenceFare = resolveFare(fare, date, null, paidUntil);
+          const occurrenceFare = resolveFare(fare, date, techIds, null, paidUntil);
           const id = randomUUID(), payload = { ...base, ...occurrenceFare, date, seriesId };
           await tx.serviceRecord.create({ data: { id, kind: 'schedule', payload, techId: base.techId, clientId: base.clientId } });
           await tx.serviceAuditEvent.create({ data: { actorId: actor.id, entityId: id, action: 'schedule.create' } });
@@ -107,11 +122,13 @@ export async function POST(request: Request) {
         const stored = await tx.serviceRecord.findUnique({ where: { id }, select: { kind: true, payload: true } });
         if (!stored || stored.kind !== 'schedule') throw new ServiceError('El evento no existe', 404);
         const previous = stored.payload as unknown as StoredEvent;
-        const event = { ...previous, ...base, ...resolveFare(fare, base.date, previous, paidUntil) };
+        // Stale fare fields are dropped before merging so a removed fare leaves no status or map behind.
+        const { fareStatus: _status, farePaidAt: _paidAt, fares: _fares, ...previousRest } = previous;
+        const event = { ...previousRest, ...base, ...resolveFare(fare, base.date, techIds, previous, paidUntil) };
         const result = await tx.serviceRecord.updateMany({ where: { id, kind: 'schedule', revision: body.revision }, data: { payload: event as unknown as Prisma.InputJsonValue, techId: event.techId, clientId: event.clientId, revision: { increment: 1 } } });
         if (!result.count) throw new ServiceError('El evento cambió. Recarga la programación antes de editarlo.', 409);
       } else {
-        const event = { ...base, ...resolveFare(fare, base.date, null, paidUntil) };
+        const event = { ...base, ...resolveFare(fare, base.date, techIds, null, paidUntil) };
         await tx.serviceRecord.create({ data: { id, kind: 'schedule', payload: event, techId: event.techId, clientId: event.clientId } });
       }
       await tx.serviceAuditEvent.create({ data: { actorId: actor.id, entityId: id, action: body.id ? 'schedule.update' : 'schedule.create' } });

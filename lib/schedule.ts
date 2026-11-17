@@ -27,10 +27,37 @@ export const FARES_PAID_UNTIL_KEY = 'fares_paid_until';
 export const fareLocked = (date: string, paidUntil: string | null | undefined) => !!paidUntil && date <= paidUntil;
 export const hasFare = (event: { fareCents?: number | null }) => typeof event.fareCents === 'number' && event.fareCents > 0;
 
-export type ScheduleEvent = z.infer<typeof eventSchema> & { id: string; revision: number; fareStatus?: FareStatus; farePaidAt?: string | null };
+/** Fare of one engineer on an event. */
+export type TechFare = { status: FareStatus; paidAt: string | null };
+export type ScheduleEvent = z.infer<typeof eventSchema> & {
+  id: string; revision: number;
+  /** Summary of `fares` (kept for the calendar and older records): paid when every engineer's fare is paid. */
+  fareStatus?: FareStatus; farePaidAt?: string | null;
+  /** Fare of each engineer still owed/paid, by engineer id. Absent on events saved before fares were per engineer. */
+  fares?: Record<string, TechFare>;
+};
 export type SchedulePerson = { id: string; name: string | null; email: string | null; avatar?: string | null };
 // Events saved before multiple engineers only have techId.
 export const eventTechIds = (event: { techId: string; techIds?: string[] }) => event.techIds?.length ? event.techIds : [event.techId];
+
+/**
+ * Each engineer of a shared event has their own fare (same value and reason): it can be accepted,
+ * removed or paid separately. Older events only have the event-level status, which applies to all.
+ * Engineers no longer assigned to the event are dropped.
+ */
+export function eventFares(event: { techId: string; techIds?: string[]; fareCents?: number | null; fareStatus?: FareStatus; farePaidAt?: string | null; fares?: Record<string, TechFare> }): Record<string, TechFare> {
+  if (!hasFare(event)) return {};
+  const techIds = eventTechIds(event);
+  if (event.fares) return Object.fromEntries(Object.entries(event.fares).filter(([id]) => techIds.includes(id)));
+  return Object.fromEntries(techIds.map(id => [id, { status: event.fareStatus || 'pending', paidAt: event.farePaidAt ?? null }]));
+}
+/** Event-level summary of per-engineer fares: paid only when all are paid; accepted only when none is pending. */
+export function fareSummary(fares: Record<string, TechFare>): { fareStatus: FareStatus; farePaidAt: string | null } {
+  const entries = Object.values(fares);
+  if (entries.length && entries.every(fare => fare.status === 'paid')) return { fareStatus: 'paid', farePaidAt: entries.map(fare => fare.paidAt || '').sort().pop() || null };
+  if (entries.length && entries.every(fare => fare.status !== 'pending')) return { fareStatus: 'accepted', farePaidAt: null };
+  return { fareStatus: 'pending', farePaidAt: null };
+}
 export const statusLabels = { planned: 'Programado', in_progress: 'En proceso', completed: 'Completado', vacation: 'Vacaciones', available: 'Disponible', permission: 'Permiso', medical: 'Cita médica' };
 
 // Events store Bogotá wall-clock dates and times. Colombia has no daylight saving

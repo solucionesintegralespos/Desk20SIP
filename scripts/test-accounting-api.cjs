@@ -387,20 +387,20 @@ tables.user.push(
   assert.equal((await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-04', 'GET'))).json()).totals.count, 1);
   // Only administration and accounting manage fares.
   sessionUserId = 'agent';
-  assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'accept', revision: record.revision }), ctx(eventId))).status, 403);
+  assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'accept', techId: 'agent', revision: record.revision }), ctx(eventId))).status, 403);
   assert.equal((await farePay.POST(json('/api/fares/pay', 'POST', { until: '2026-11-05' }))).status, 403);
   sessionUserId = 'accounting';
-  assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'accept', revision: record.revision }), ctx(eventId))).status, 200);
+  assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'accept', techId: 'agent', revision: record.revision }), ctx(eventId))).status, 200);
   record = tables.serviceRecord.find(r => r.id === eventId); assert.equal(record.payload.fareStatus, 'accepted');
   const laterFare = tables.serviceRecord.find(r => r.payload.date === '2026-11-20');
-  assert.equal((await fareById.POST(json(`/api/fares/${laterFare.id}`, 'POST', { action: 'remove', revision: laterFare.revision }), ctx(laterFare.id))).status, 200);
+  assert.equal((await fareById.POST(json(`/api/fares/${laterFare.id}`, 'POST', { action: 'remove', techId: 'agent', revision: laterFare.revision }), ctx(laterFare.id))).status, 200);
   assert.equal(tables.serviceRecord.find(r => r.id === laterFare.id).payload.fareCents, null, 'removed fare');
   assert.equal((await farePay.POST(json('/api/fares/pay', 'POST', { until: '2099-01-01' }))).status, 400, 'no future cutoffs');
   response = await farePay.POST(json('/api/fares/pay', 'POST', { until: '2026-11-05' })); assert.equal(response.status, 200);
   const paid = await response.json(); assert.equal(paid.count, 2); assert.equal(paid.totalCents, 2000000); assert.equal(paid.paidUntil, '2026-11-05');
   report = await (await fares.GET(json('/api/fares?from=2026-11-01&to=2026-11-30', 'GET'))).json();
   assert.equal(report.paidUntil, '2026-11-05'); assert.equal(report.totals.paidCents, 2000000); assert.equal(report.totals.pendingCents, 0);
-  assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'remove', revision: tables.serviceRecord.find(r => r.id === eventId).revision }), ctx(eventId))).status, 409, 'paid fares cannot be removed');
+  assert.equal((await fareById.POST(json(`/api/fares/${eventId}`, 'POST', { action: 'remove', techId: 'agent', revision: tables.serviceRecord.find(r => r.id === eventId).revision }), ctx(eventId))).status, 409, 'paid fares cannot be removed');
   // Frozen: events up to the cutoff cannot change their fare, but the rest of the event can still be edited.
   sessionUserId = 'agent';
   record = tables.serviceRecord.find(r => r.id === eventId);
@@ -415,6 +415,71 @@ tables.user.push(
   assert.equal(sheet.status, 200); assert.ok(sheet.headers.get('Content-Type').includes('spreadsheetml'));
   assert.equal(Buffer.from(await sheet.arrayBuffer()).subarray(0, 2).toString(), 'PK');
   sessionUserId = 'accounting';
+
+  // Shared events: every engineer has their own fare of the same value, managed separately.
+  response = await schedule.POST(json('/api/schedule', 'POST', { ...event, techId: 'agent', techIds: ['agent', 'accounting'], date: '2026-12-10', fareCents: 1000000, fareReason: 'Visita conjunta' }));
+  assert.equal(response.status, 200); const sharedId = (await response.json()).id;
+  let shared = tables.serviceRecord.find(r => r.id === sharedId);
+  assert.deepEqual(shared.payload.fares, { agent: { status: 'pending', paidAt: null }, accounting: { status: 'pending', paidAt: null } });
+  report = await (await fares.GET(json('/api/fares?from=2026-12-10&to=2026-12-10', 'GET'))).json();
+  assert.equal(report.fares.length, 2, 'one row per engineer'); assert.equal(report.totals.count, 2); assert.equal(report.totals.totalCents, 2000000, 'the value counts once per engineer');
+  assert.deepEqual(report.fares.map(row => row.technician.id).sort(), ['accounting', 'agent']);
+  assert.ok(report.fares.every(row => row.technicians.length === 2), 'each row knows the event is shared');
+  assert.equal((await (await fares.GET(json('/api/fares?from=2026-12-10&to=2026-12-10&tech=accounting', 'GET'))).json()).fares.length, 1, 'the engineer filter returns only that engineer\'s fare');
+  assert.equal((await fareById.POST(json(`/api/fares/${sharedId}`, 'POST', { action: 'accept', revision: shared.revision }), ctx(sharedId))).status, 400, 'the engineer is required');
+  assert.equal((await fareById.POST(json(`/api/fares/${sharedId}`, 'POST', { action: 'accept', techId: 'admin', revision: shared.revision }), ctx(sharedId))).status, 404, 'only engineers with a fare on the event');
+  // Accept one engineer's fare: the other stays pending and the event summary stays pending.
+  assert.equal((await fareById.POST(json(`/api/fares/${sharedId}`, 'POST', { action: 'accept', techId: 'accounting', revision: shared.revision }), ctx(sharedId))).status, 200);
+  shared = tables.serviceRecord.find(r => r.id === sharedId);
+  assert.equal(shared.payload.fares.accounting.status, 'accepted'); assert.equal(shared.payload.fares.agent.status, 'pending'); assert.equal(shared.payload.fareStatus, 'pending');
+  // Remove one engineer's fare: the other keeps it and the event keeps its fare value.
+  assert.equal((await fareById.POST(json(`/api/fares/${sharedId}`, 'POST', { action: 'remove', techId: 'agent', revision: shared.revision }), ctx(sharedId))).status, 200);
+  shared = tables.serviceRecord.find(r => r.id === sharedId);
+  assert.equal(shared.payload.fareCents, 1000000); assert.deepEqual(Object.keys(shared.payload.fares), ['accounting']); assert.equal(shared.payload.fareStatus, 'accepted');
+  report = await (await fares.GET(json('/api/fares?from=2026-12-10&to=2026-12-10', 'GET'))).json();
+  assert.equal(report.fares.length, 1); assert.equal(report.fares[0].technician.id, 'accounting'); assert.equal(report.totals.totalCents, 1000000);
+  sessionUserId = 'agent';
+  assert.equal((await (await fares.GET(json('/api/fares?from=2026-12-10&to=2026-12-10', 'GET'))).json()).fares.length, 0, 'an agent whose fare was removed no longer sees it');
+  // Editing the event without changing the fare keeps the removal; an engineer added later gets a pending fare.
+  assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...shared.payload, id: sharedId, revision: shared.revision, techIds: ['agent', 'accounting', 'admin'], title: 'Visita conjunta ampliada' }))).status, 200);
+  shared = tables.serviceRecord.find(r => r.id === sharedId);
+  assert.deepEqual(shared.payload.fares, { accounting: { status: 'accepted', paidAt: null }, admin: { status: 'pending', paidAt: null } });
+  // Changing the fare value starts over: every engineer gets a pending fare again.
+  assert.equal((await schedule.POST(json('/api/schedule', 'POST', { ...shared.payload, id: sharedId, revision: shared.revision, fareCents: 1500000 }))).status, 200);
+  shared = tables.serviceRecord.find(r => r.id === sharedId);
+  assert.deepEqual(Object.keys(shared.payload.fares).sort(), ['accounting', 'admin', 'agent']); assert.ok(Object.values(shared.payload.fares).every(fare => fare.status === 'pending'));
+  sessionUserId = 'accounting';
+  // Removing the last engineer's fare leaves the event without a fare.
+  for (const techId of ['agent', 'accounting']) { shared = tables.serviceRecord.find(r => r.id === sharedId); assert.equal((await fareById.POST(json(`/api/fares/${sharedId}`, 'POST', { action: 'remove', techId, revision: shared.revision }), ctx(sharedId))).status, 200); }
+  shared = tables.serviceRecord.find(r => r.id === sharedId); assert.deepEqual(Object.keys(shared.payload.fares), ['admin']);
+  assert.equal((await fareById.POST(json(`/api/fares/${sharedId}`, 'POST', { action: 'remove', techId: 'admin', revision: shared.revision }), ctx(sharedId))).status, 200);
+  shared = tables.serviceRecord.find(r => r.id === sharedId); assert.equal(shared.payload.fareCents, null); assert.equal(shared.payload.fares, undefined); assert.equal(shared.payload.fareStatus, undefined);
+  // Bulk payment counts and sums one fare per engineer; older events without the per-engineer map are paid for every engineer.
+  await schedule.POST(json('/api/schedule', 'POST', { ...event, techIds: ['agent', 'accounting'], date: '2026-11-08', fareCents: 200000, fareReason: 'Dos ingenieros' }));
+  const legacy = { id: 'legacy-fare', kind: 'schedule', revision: 1, payload: { ...event, techIds: ['agent', 'accounting'], date: '2026-11-07', fareCents: 50000, fareReason: 'Antiguo', fareStatus: 'accepted' } };
+  tables.serviceRecord.push(legacy);
+  report = await (await fares.GET(json('/api/fares?from=2026-11-07&to=2026-11-07', 'GET'))).json();
+  assert.equal(report.fares.length, 2); assert.ok(report.fares.every(row => row.status === 'accepted'), 'the event-level status applies to every engineer of older events');
+  response = await farePay.POST(json('/api/fares/pay', 'POST', { until: '2026-11-08' })); assert.equal(response.status, 200);
+  // 2 engineers × 200000 (11-08) + 2 engineers × 50000 (legacy, 11-07) + the 100-cent fare created above on 11-06.
+  const paidShared = await response.json(); assert.equal(paidShared.count, 5); assert.equal(paidShared.totalCents, 500100);
+  const paidLegacy = tables.serviceRecord.find(r => r.id === 'legacy-fare');
+  assert.equal(paidLegacy.payload.fareStatus, 'paid'); assert.ok(paidLegacy.payload.fares.agent.paidAt); assert.equal(paidLegacy.payload.fares.accounting.status, 'paid');
+  assert.equal((await fareById.POST(json(`/api/fares/legacy-fare`, 'POST', { action: 'remove', techId: 'agent', revision: paidLegacy.revision }), ctx('legacy-fare'))).status, 409, 'paid per-engineer fares cannot be removed');
+  const sharedSheet = await fareExport.GET(json('/api/fares/export?from=2026-11-07&to=2026-11-08', 'GET'));
+  assert.equal(sharedSheet.status, 200);
+  // The zip entries are deflated: inflate each one and read the sheet XML (inline strings).
+  const zip = Buffer.from(await sharedSheet.arrayBuffer()), { inflateRawSync } = require('node:zlib');
+  let sheetXml = '';
+  for (let offset = 0; zip.readUInt32LE(offset) === 0x04034b50;) {
+    const compressedSize = zip.readUInt32LE(offset + 18), nameLength = zip.readUInt16LE(offset + 26), extraLength = zip.readUInt16LE(offset + 28);
+    const entryName = zip.subarray(offset + 30, offset + 30 + nameLength).toString(), start = offset + 30 + nameLength + extraLength;
+    if (entryName === 'xl/worksheets/sheet1.xml') sheetXml = inflateRawSync(zip.subarray(start, start + compressedSize)).toString();
+    offset = start + compressedSize;
+  }
+  assert.ok(sheetXml.includes('Compartido con'), 'the export has the shared column');
+  assert.equal((sheetXml.match(/Dos ingenieros/g) || []).length, 2, 'a shared event is exported once per engineer');
+  assert.equal((sheetXml.match(/Antiguo/g) || []).length, 2, 'older events are exported once per engineer too');
 
   // Catalog <-> Excel: round trip, template examples ignored, create/update by name, apply.
   sessionUserId = 'accounting';
