@@ -1,24 +1,32 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { Plus, Repeat, Download, Eye, Mail, Link2, Ban, Copy, RefreshCw, Search, Filter } from 'lucide-react'
+import { Plus, Repeat, Download, Eye, Mail, Link2, Ban, Copy, RefreshCw, Search, Filter, Pencil, CheckCircle2, Undo2, X, AlertTriangle } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Textarea } from '@/components/support/ui'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import Pagination from '@/components/tickets/Pagination'
 import { PdfPreview } from './PdfPreview'
+import { MoneyInput } from './MoneyInput'
 import { api, type CustomerOption } from './api'
-import type { SerializedAccount } from '@/lib/accounting/billing'
+import type { SerializedAccount, BulkResult } from '@/lib/accounting/billing'
 import { formatMoney, formatShortDateCO, formatDateCO, periodLabel } from '@/lib/accounting/format'
+import { serviceDay } from '@/lib/support/order-display'
 
-type Totals = { count: number; issuedCount: number; voidCount: number; issuedCents: number; voidCents: number }
+type Totals = { count: number; issuedCount: number; voidCount: number; paidCount: number; issuedCents: number; voidCents: number; paidCents: number; billedCents: number }
 type Creator = { id: string; name: string }
 type ListAccount = SerializedAccount & { createdBy?: Creator | null }
 type ListResponse = { accounts: ListAccount[]; total: number; page: number; perPage: number; totals?: Totals }
 type StaffOption = { id: string; name: string; email: string | null; active: boolean }
 type EmailResult = { status: 'sent' | 'failed' | 'skipped'; recipient: string | null; message: string }
+type BulkResponse = { results: BulkResult[]; done: number; skipped: number; failed: number }
+// Edit and payment dialogs work on one account or on the selection; `accounts` lists what they target.
+type EditDraft = { accounts: SerializedAccount[]; concept: string; totalCents: number | null }
+type PayDraft = { accounts: SerializedAccount[]; paidAt: string; note: string }
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm'
+const statusLabels: Record<SerializedAccount['status'], string> = { ISSUED: 'Emitida', PAID: 'Pagada', VOID: 'Anulada' }
+const customerLabel = (account: SerializedAccount) => account.customer.businessName || account.customer.name
 
 export default function BillingAccounts() {
   const router = useRouter()
@@ -28,6 +36,7 @@ export default function BillingAccounts() {
   const from = searchParams.get('from') || '', to = searchParams.get('to') || ''
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
   const highlight = searchParams.get('new') || ''
+  const today = serviceDay(new Date().toISOString())
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [customers, setCustomers] = useState<CustomerOption[]>([])
@@ -41,6 +50,11 @@ export default function BillingAccounts() {
   const [linking, setLinking] = useState<SerializedAccount | null>(null)
   const [voiding, setVoiding] = useState<SerializedAccount | null>(null)
   const [voidReason, setVoidReason] = useState('')
+  const [editing, setEditing] = useState<EditDraft | null>(null)
+  const [paying, setPaying] = useState<PayDraft | null>(null)
+  const [unpaying, setUnpaying] = useState<SerializedAccount | null>(null)
+  const [bulkResults, setBulkResults] = useState<{ title: string; response: BulkResponse } | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   useEffect(() => { setSearch(q) }, [q])
 
@@ -54,6 +68,8 @@ export default function BillingAccounts() {
     finally { setLoading(false) }
   }, [query])
   useEffect(() => { void load() }, [load])
+  // The selection belongs to the listed page: changing filters or page starts over.
+  useEffect(() => { setSelected(new Set()) }, [query])
   useEffect(() => {
     api<CustomerOption[]>('/api/customers').then(list => setCustomers(list.map(c => ({ ...c, name: c.name || c.email || 'Cliente', city: c.city ?? (c as unknown as { location: string | null }).location ?? null })))).catch(() => { /* Filters still work without the customer list. */ })
   }, [])
@@ -69,7 +85,7 @@ export default function BillingAccounts() {
   const hasFilters = !!(q || customer || status || createdBy || from || to)
 
   const refreshRow = (updated: SerializedAccount) => {
-    setData(current => current ? { ...current, accounts: current.accounts.map(a => a.id === updated.id ? updated : a) } : current)
+    setData(current => current ? { ...current, accounts: current.accounts.map(a => a.id === updated.id ? { ...a, ...updated } : a) } : current)
     if (viewing?.id === updated.id) setViewing(updated)
     if (linking?.id === updated.id) setLinking(updated)
   }
@@ -99,6 +115,63 @@ export default function BillingAccounts() {
       const updated = await api<SerializedAccount>(`/api/billing/${account.id}`, { method: 'PATCH', json: { action: 'void', reason: voidReason } })
       refreshRow(updated); setVoiding(null); setVoidReason('')
       toast.success(`Cuenta N.º ${updated.numberLabel} anulada. Su número no se reutiliza.`)
+      void load()
+    } catch (e) { toast.error((e as Error).message) }
+    finally { setBusy(false) }
+  }
+  async function unpayAccount(account: SerializedAccount) {
+    setBusy(true)
+    try {
+      const updated = await api<SerializedAccount>(`/api/billing/${account.id}`, { method: 'PATCH', json: { action: 'unpay' } })
+      refreshRow(updated); setUnpaying(null)
+      toast.success(`Pago de la cuenta N.º ${updated.numberLabel} deshecho. Vuelve a estar emitida.`)
+      void load()
+    } catch (e) { toast.error((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  // Edit: one account sends concept and total; several send only the fields that were filled in.
+  const editErrors = (draft: EditDraft) => {
+    const single = draft.accounts.length === 1
+    return {
+      concept: single && !draft.concept.trim() ? 'Describe el producto o concepto.' : '',
+      total: single && draft.totalCents === null ? 'Indica el total.' : '',
+      none: !single && !draft.concept.trim() && draft.totalCents === null ? 'Escribe un nuevo concepto, un nuevo total o ambos.' : '',
+    }
+  }
+  async function submitEdit() {
+    if (!editing || busy) return
+    const errors = editErrors(editing)
+    if (errors.concept || errors.total || errors.none) { toast.error(errors.concept || errors.total || errors.none); return }
+    const changes = { ...(editing.concept.trim() ? { concept: editing.concept.trim() } : {}), ...(editing.totalCents !== null ? { total: editing.totalCents / 100 } : {}) }
+    setBusy(true)
+    try {
+      if (editing.accounts.length === 1) {
+        const updated = await api<SerializedAccount>(`/api/billing/${editing.accounts[0].id}`, { method: 'PATCH', json: { action: 'edit', ...changes } })
+        refreshRow(updated); toast.success(`Cuenta N.º ${updated.numberLabel} actualizada. El PDF se generó de nuevo.`)
+      } else {
+        const response = await api<BulkResponse>('/api/billing/bulk', { method: 'POST', json: { action: 'edit', ids: editing.accounts.map(a => a.id), ...changes } })
+        setBulkResults({ title: 'Edición masiva', response }); setSelected(new Set())
+      }
+      setEditing(null); void load()
+    } catch (e) { toast.error((e as Error).message) }
+    finally { setBusy(false) }
+  }
+  async function submitPay() {
+    if (!paying || busy) return
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(paying.paidAt)) { toast.error('Indica la fecha de pago.'); return }
+    if (paying.paidAt > today) { toast.error('La fecha de pago no puede ser futura.'); return }
+    const payment = { paidAt: paying.paidAt, note: paying.note.trim() }
+    setBusy(true)
+    try {
+      if (paying.accounts.length === 1) {
+        const updated = await api<SerializedAccount>(`/api/billing/${paying.accounts[0].id}`, { method: 'PATCH', json: { action: 'pay', ...payment } })
+        refreshRow(updated); toast.success(`Cuenta N.º ${updated.numberLabel} marcada como pagada.`)
+      } else {
+        const response = await api<BulkResponse>('/api/billing/bulk', { method: 'POST', json: { action: 'pay', ids: paying.accounts.map(a => a.id), ...payment } })
+        setBulkResults({ title: 'Pago masivo', response }); setSelected(new Set())
+      }
+      setPaying(null); void load()
     } catch (e) { toast.error((e as Error).message) }
     finally { setBusy(false) }
   }
@@ -106,23 +179,43 @@ export default function BillingAccounts() {
     try { await navigator.clipboard.writeText(text); toast.success('Enlace copiado') } catch { toast.error('No se pudo copiar. Selecciona el enlace y cópialo manualmente.') }
   }
 
+  // Only issued accounts can be edited or paid, so only they can be selected.
+  const selectable = useMemo(() => (data?.accounts || []).filter(a => a.status === 'ISSUED'), [data])
+  const selectedAccounts = selectable.filter(a => selected.has(a.id))
+  const allSelected = selectable.length > 0 && selectedAccounts.length === selectable.length
+  const toggle = (id: string) => setSelected(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectable.map(a => a.id)))
+  const openEdit = (accounts: SerializedAccount[]) => setEditing({ accounts, concept: accounts.length === 1 ? accounts[0].concept : '', totalCents: accounts.length === 1 ? accounts[0].totalCents : null })
+  const openPay = (accounts: SerializedAccount[]) => setPaying({ accounts, paidAt: today, note: '' })
+
   const totals = data?.totals
   const totalsPending = loading && !data
   const skeleton = <span className="inline-block h-7 w-20 animate-pulse rounded bg-gray-200" aria-label="Cargando" />
   const statusPill = (account: SerializedAccount) => account.status === 'VOID'
     ? <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">Anulada</span>
-    : <span className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">Emitida</span>
+    : account.status === 'PAID'
+      ? <span className="inline-flex flex-col items-start gap-0.5"><span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800"><CheckCircle2 size={12} /> Pagada</span>{account.paidAt && <span className="text-xs text-gray-500">{formatShortDateCO(account.paidAt)}{account.paymentNote ? ` · ${account.paymentNote}` : ''}</span>}</span>
+      : <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800">Emitida</span>
+  const frozenTitle = (account: SerializedAccount, verb: string) => account.status === 'PAID' ? `Una cuenta pagada no se puede ${verb}. Deshaz el pago primero.` : account.status === 'VOID' ? `Una cuenta anulada no se puede ${verb}` : ''
   const actions = (account: SerializedAccount, compact = true) => <div className={`flex flex-wrap items-center gap-1 ${compact ? '' : 'gap-2'}`}>
     <a href={`/api/billing/${account.id}/pdf`} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50" title="Descargar PDF"><Download size={14} /> PDF</a>
     {compact && <button type="button" onClick={() => setViewing(account)} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50" title="Ver documento"><Eye size={14} /> Ver</button>}
     <button type="button" disabled={account.status === 'VOID'} onClick={() => setEmailing(account)} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50" title={account.status === 'VOID' ? 'Las cuentas anuladas no se envían' : 'Enviar por correo'}><Mail size={14} /> Correo</button>
     <button type="button" onClick={() => setLinking(account)} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50" title="Enlace público"><Link2 size={14} /> Enlace</button>
-    <button type="button" disabled={account.status === 'VOID'} onClick={() => { setVoidReason(''); setVoiding(account) }} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50" title={account.status === 'VOID' ? 'Ya anulada' : 'Anular cuenta'}><Ban size={14} /> Anular</button>
+    <button type="button" disabled={account.status !== 'ISSUED' || busy} onClick={() => openEdit([account])} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50" title={frozenTitle(account, 'editar') || 'Editar concepto y total'}><Pencil size={14} /> Editar</button>
+    {account.status === 'PAID'
+      ? <button type="button" disabled={busy} onClick={() => setUnpaying(account)} className="inline-flex items-center gap-1 rounded-lg border border-amber-300 px-2 py-1 text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-50" title="Deshacer el pago: la cuenta vuelve a estar emitida y editable"><Undo2 size={14} /> Deshacer pago</button>
+      : <button type="button" disabled={account.status !== 'ISSUED' || busy} onClick={() => openPay([account])} className="inline-flex items-center gap-1 rounded-lg border border-green-300 px-2 py-1 text-xs text-green-800 hover:bg-green-50 disabled:opacity-50" title={account.status === 'VOID' ? 'Una cuenta anulada no se puede marcar como pagada' : 'Marcar como pagada'}><CheckCircle2 size={14} /> Pagar</button>}
+    <button type="button" disabled={account.status !== 'ISSUED' || busy} onClick={() => { setVoidReason(''); setVoiding(account) }} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50" title={account.status === 'VOID' ? 'Ya anulada' : frozenTitle(account, 'anular') || 'Anular cuenta'}><Ban size={14} /> Anular</button>
   </div>
+  const accountList = (accounts: SerializedAccount[]) => <ul className="max-h-48 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 text-sm">
+    {accounts.map(a => <li key={a.id} className="flex items-center justify-between gap-3 px-3 py-1.5"><span><span className="font-semibold text-primary-600 tabular-nums">N.º {a.numberLabel}</span> <span className="text-gray-700">{customerLabel(a)}</span><span className="block truncate text-xs text-gray-500" title={a.concept}>{a.concept}</span></span><span className="whitespace-nowrap font-semibold tabular-nums text-gray-900">{formatMoney(a.totalCents)}</span></li>)}
+  </ul>
+  const sumCents = (accounts: SerializedAccount[]) => accounts.reduce((sum, a) => sum + a.totalCents, 0)
 
   return <>
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-3xl font-bold text-gray-900">Cuentas de cobro</h1><p className="mt-1 text-gray-600">Cuentas ocasionales y recurrentes con numeración independiente por cliente.</p></div>
+      <div><h1 className="text-3xl font-bold text-gray-900">Cuentas de cobro</h1><p className="mt-1 text-gray-600">Cuentas ocasionales y recurrentes con numeración independiente por cliente. Edítalas o márcalas como pagadas una a una o en bloque.</p></div>
       <div className="flex flex-wrap gap-2">
         <Link href="/dashboard/billing/templates" className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Repeat size={16} /> Cuentas recurrentes</Link>
         <Link href="/dashboard/billing/new" className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"><Plus size={16} /> Nueva cuenta ocasional</Link>
@@ -144,7 +237,7 @@ export default function BillingAccounts() {
         <SearchSelect aria-label="Generada por" className="w-full md:w-56" placeholder="Buscar usuario…" emptyOption="Todos los usuarios" value={createdBy} onChange={id => setFilter('createdBy', id)}
           options={staff.map(user => ({ id: user.id, label: user.name, description: [user.email, user.active ? '' : 'Inactivo'].filter(Boolean).join(' · ') || undefined }))} />
         <select aria-label="Estado" value={status} onChange={e => setFilter('status', e.target.value)} className="w-full md:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
-          <option value="">Todos los estados</option><option value="ISSUED">Emitidas</option><option value="VOID">Anuladas</option>
+          <option value="">Todos los estados</option><option value="ISSUED">Emitidas (pendientes de pago)</option><option value="PAID">Pagadas</option><option value="VOID">Anuladas</option>
         </select>
         <div className="flex items-center gap-2 text-sm text-gray-700">
           <input type="date" aria-label="Desde" value={from} max={to || undefined} onChange={e => setFilter('from', e.target.value)} className={inputClass} />
@@ -158,28 +251,42 @@ export default function BillingAccounts() {
     {/* Totals over every account matching the current filters, not only this page. */}
     <section aria-label="Totales del filtro actual" className="mb-6">
       <p className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-500">Totales del filtro actual</p>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <div className="rounded-lg bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Cuentas</p><p className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">{totalsPending ? skeleton : String(totals?.count ?? 0)}</p></div>
-        <div className="rounded-lg bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Emitidas</p><p className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">{totalsPending ? skeleton : String(totals?.issuedCount ?? 0)}</p><p className="text-xs text-gray-500 tabular-nums">{totalsPending ? '—' : formatMoney(totals?.issuedCents ?? 0)}</p></div>
+        <div className="rounded-lg bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Emitidas</p><p className="mt-1 text-2xl font-bold text-blue-800 tabular-nums">{totalsPending ? skeleton : String(totals?.issuedCount ?? 0)}</p><p className="text-xs text-gray-500 tabular-nums">{totalsPending ? '—' : `${formatMoney(totals?.issuedCents ?? 0)} por cobrar`}</p></div>
+        <div className="rounded-lg bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Pagadas</p><p className="mt-1 text-2xl font-bold text-green-800 tabular-nums">{totalsPending ? skeleton : String(totals?.paidCount ?? 0)}</p><p className="text-xs text-gray-500 tabular-nums">{totalsPending ? '—' : formatMoney(totals?.paidCents ?? 0)}</p></div>
         <div className="rounded-lg bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Anuladas</p><p className="mt-1 text-2xl font-bold text-gray-500 tabular-nums">{totalsPending ? skeleton : String(totals?.voidCount ?? 0)}</p><p className="text-xs text-gray-400 tabular-nums">{totalsPending ? '—' : formatMoney(totals?.voidCents ?? 0)}</p></div>
-        <div className="rounded-lg border-l-4 border-primary-600 bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Total emitido</p><p className="mt-1 text-2xl font-bold text-primary-700 tabular-nums">{totalsPending ? skeleton : formatMoney(totals?.issuedCents ?? 0)}</p><p className="text-xs text-gray-500">Sin incluir cuentas anuladas</p></div>
+        <div className="rounded-lg border-l-4 border-primary-600 bg-white p-4 shadow"><p className="text-sm font-medium text-gray-600">Total facturado</p><p className="mt-1 text-2xl font-bold text-primary-700 tabular-nums">{totalsPending ? skeleton : formatMoney(totals?.billedCents ?? 0)}</p><p className="text-xs text-gray-500">Emitidas y pagadas, sin anuladas</p></div>
       </div>
     </section>
+
+    {selectedAccounts.length > 0 && <div role="toolbar" aria-label="Acciones sobre la selección" className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 px-4 py-3">
+      <p className="text-sm font-medium text-primary-900">{selectedAccounts.length} cuenta{selectedAccounts.length === 1 ? '' : 's'} seleccionada{selectedAccounts.length === 1 ? '' : 's'} · {formatMoney(sumCents(selectedAccounts))}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={busy} onClick={() => openPay(selectedAccounts)}><CheckCircle2 size={16} /> Marcar como pagadas</Button>
+        <Button variant="outline" disabled={busy} onClick={() => openEdit(selectedAccounts)}><Pencil size={16} /> Editar en bloque</Button>
+        <Button variant="outline" disabled={busy} onClick={() => setSelected(new Set())}><X size={16} /> Quitar selección</Button>
+      </div>
+    </div>}
 
     {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">{error} <button type="button" onClick={() => void load()} className="ml-2 underline">Reintentar</button></p>}
     {loading && !data ? <div className="rounded-lg bg-white p-12 text-center text-gray-500 shadow">Cargando cuentas de cobro…</div>
       : !data || data.accounts.length === 0 ? <div className="rounded-lg bg-white p-12 text-center shadow"><p className="text-lg text-gray-500">No hay cuentas de cobro{hasFilters ? ' con estos filtros' : ''}</p><p className="mt-2 text-gray-400">Genera una cuenta ocasional o configura cuentas recurrentes.</p></div>
-      : <div className="overflow-hidden rounded-lg bg-white shadow">
+      : <div className={`overflow-hidden rounded-lg bg-white shadow ${loading ? 'opacity-60' : ''}`}>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50">
-              <tr>{['N.º', 'Fecha', 'Cliente', 'Concepto', 'Período', 'Total', 'Estado', 'Acciones'].map(h => <th key={h} scope="col" className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${h === 'Total' ? 'text-right' : ''}`}>{h}</th>)}</tr>
+              <tr>
+                <th scope="col" className="w-10 px-4 py-3"><input type="checkbox" aria-label="Seleccionar todas las cuentas emitidas de esta página" checked={allSelected} disabled={selectable.length === 0} onChange={toggleAll} className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" /></th>
+                {['N.º', 'Fecha', 'Cliente', 'Concepto', 'Período', 'Total', 'Estado', 'Acciones'].map(h => <th key={h} scope="col" className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 ${h === 'Total' ? 'text-right' : ''}`}>{h}</th>)}
+              </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
-              {data.accounts.map(account => <tr key={account.id} className={`align-top ${highlight === account.id ? 'bg-primary-50' : 'hover:bg-gray-50'}`}>
+              {data.accounts.map(account => <tr key={account.id} className={`align-top ${highlight === account.id ? 'bg-primary-50' : selected.has(account.id) ? 'bg-primary-50/60' : 'hover:bg-gray-50'}`}>
+                <td className="px-4 py-3"><input type="checkbox" aria-label={`Seleccionar cuenta N.º ${account.numberLabel}`} checked={selected.has(account.id)} disabled={account.status !== 'ISSUED'} title={account.status !== 'ISSUED' ? `Las cuentas ${account.status === 'PAID' ? 'pagadas' : 'anuladas'} no se editan ni se pagan` : undefined} onChange={() => toggle(account.id)} className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-40" /></td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-primary-600 tabular-nums">{account.numberLabel}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{formatShortDateCO(account.issuedAt)}{account.createdBy && <div className="text-xs text-gray-500">por {account.createdBy.name}</div>}</td>
-                <td className="px-4 py-3 text-sm"><div className="font-medium text-gray-900">{account.customer.businessName || account.customer.name}</div>{account.customer.taxId && <div className="text-xs text-gray-500">NIT/CC {account.customer.taxId}</div>}</td>
+                <td className="px-4 py-3 text-sm"><div className="font-medium text-gray-900">{customerLabel(account)}</div>{account.customer.taxId && <div className="text-xs text-gray-500">NIT/CC {account.customer.taxId}</div>}</td>
                 <td className="max-w-xs px-4 py-3 text-sm text-gray-700"><span className="line-clamp-2" title={account.concept}>{account.concept}</span></td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{account.period ? periodLabel(account.period) : 'Ocasional'}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-gray-900 tabular-nums">{formatMoney(account.totalCents)}</td>
@@ -195,9 +302,9 @@ export default function BillingAccounts() {
     <Dialog open={!!viewing} onOpenChange={open => { if (!open) setViewing(null) }}>
       <DialogContent className="max-w-4xl">
         {viewing && <>
-          <DialogHeader><DialogTitle>Cuenta de cobro N.º {viewing.numberLabel}</DialogTitle><DialogDescription>{viewing.customer.businessName || viewing.customer.name} · {formatDateCO(viewing.issuedAt)} · {formatMoney(viewing.totalCents)} {viewing.status === 'VOID' && '· Anulada'}</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Cuenta de cobro N.º {viewing.numberLabel}</DialogTitle><DialogDescription>{customerLabel(viewing)} · {formatDateCO(viewing.issuedAt)} · {formatMoney(viewing.totalCents)} · {statusLabels[viewing.status]}{viewing.status === 'PAID' && viewing.paidAt ? ` el ${formatShortDateCO(viewing.paidAt)}` : ''}</DialogDescription></DialogHeader>
           <div className="mb-3">{actions(viewing, false)}</div>
-          <PdfPreview src={`/api/billing/${viewing.id}/pdf?disposition=inline`} title={`Cuenta de cobro ${viewing.numberLabel}`} />
+          <PdfPreview src={`/api/billing/${viewing.id}/pdf?disposition=inline&v=${encodeURIComponent(viewing.paidAt || viewing.concept.length + ':' + viewing.totalCents)}`} title={`Cuenta de cobro ${viewing.numberLabel}`} />
         </>}
       </DialogContent>
     </Dialog>
@@ -237,6 +344,77 @@ export default function BillingAccounts() {
           <DialogHeader><DialogTitle>¿Anular la cuenta de cobro N.º {voiding.numberLabel}?</DialogTitle><DialogDescription>El documento se conserva marcado como anulado y su número no vuelve a asignarse.</DialogDescription></DialogHeader>
           <label className="block text-sm font-medium text-gray-700">Motivo (opcional)<Textarea rows={3} maxLength={500} value={voidReason} onChange={e => setVoidReason(e.target.value)} className="mt-1 text-sm" /></label>
           <div className="mt-4 flex gap-2"><Button disabled={busy} className="!bg-red-600 hover:!bg-red-700 focus:!ring-red-500" onClick={() => void voidAccount(voiding)}><Ban size={16} />{busy ? 'Anulando…' : 'Anular cuenta'}</Button><Button variant="outline" disabled={busy} onClick={() => setVoiding(null)}>Cancelar</Button></div>
+        </>}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!editing} onOpenChange={open => { if (!open && !busy) setEditing(null) }}>
+      <DialogContent>
+        {editing && (() => {
+          const single = editing.accounts.length === 1, errors = editErrors(editing)
+          return <>
+            <DialogHeader>
+              <DialogTitle>{single ? `Editar cuenta de cobro N.º ${editing.accounts[0].numberLabel}` : `Editar ${editing.accounts.length} cuentas de cobro`}</DialogTitle>
+              <DialogDescription>{single ? 'Cambia el concepto o el total. El número, el cliente y las fechas no cambian; el PDF se genera de nuevo.' : 'Los campos que dejes vacíos se conservan como están en cada cuenta. Solo se modifican las cuentas emitidas; las pagadas o anuladas se omiten.'}</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={e => { e.preventDefault(); void submitEdit() }} className="space-y-3">
+              {!single && accountList(editing.accounts)}
+              <label className="block text-sm font-medium text-gray-700">{single ? 'Producto o concepto' : 'Nuevo concepto (opcional)'}{single && <span className="text-red-500"> *</span>}
+                <Textarea rows={3} maxLength={500} value={editing.concept} placeholder={single ? '' : 'Dejar vacío para conservar el concepto de cada cuenta'} onChange={e => setEditing({ ...editing, concept: e.target.value })} className="mt-1 text-sm" aria-invalid={!!errors.concept} />
+                {errors.concept && <span role="alert" className="mt-1 block text-xs font-normal text-red-700">{errors.concept}</span>}
+              </label>
+              <label className="block text-sm font-medium text-gray-700">{single ? 'Total' : 'Nuevo total (opcional)'}{single && <span className="text-red-500"> *</span>}
+                <MoneyInput aria-label={single ? 'Total' : 'Nuevo total'} valueCents={editing.totalCents} onChange={cents => setEditing({ ...editing, totalCents: cents })} className="mt-1 text-sm" placeholder={single ? '0' : 'Dejar vacío para conservar el total de cada cuenta'} />
+                {errors.total && <span role="alert" className="mt-1 block text-xs font-normal text-red-700">{errors.total}</span>}
+              </label>
+              {!single && editing.totalCents !== null && <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 flex gap-2"><AlertTriangle size={14} className="mt-0.5 shrink-0" /> Las {editing.accounts.length} cuentas quedarán con el mismo total de {formatMoney(editing.totalCents)}.</p>}
+              <div className="flex justify-end gap-2"><Button variant="outline" disabled={busy} onClick={() => setEditing(null)}>Cancelar</Button><Button type="submit" disabled={busy}><Pencil size={16} /> {busy ? 'Guardando…' : single ? 'Guardar cambios' : `Actualizar ${editing.accounts.length} cuentas`}</Button></div>
+            </form>
+          </>
+        })()}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!paying} onOpenChange={open => { if (!open && !busy) setPaying(null) }}>
+      <DialogContent>
+        {paying && (() => {
+          const single = paying.accounts.length === 1
+          return <>
+            <DialogHeader>
+              <DialogTitle>{single ? `Marcar como pagada la cuenta N.º ${paying.accounts[0].numberLabel}` : `Marcar ${paying.accounts.length} cuentas como pagadas`}</DialogTitle>
+              <DialogDescription>{single ? `${customerLabel(paying.accounts[0])} · ${formatMoney(paying.accounts[0].totalCents)}. ` : `Total ${formatMoney(sumCents(paying.accounts))}. `}Una cuenta pagada ya no se puede editar ni anular; si hace falta corregirla, primero deshaz el pago.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={e => { e.preventDefault(); void submitPay() }} className="space-y-3">
+              {!single && accountList(paying.accounts)}
+              <label className="block text-sm font-medium text-gray-700">Fecha de pago <span className="text-red-500">*</span><input type="date" required value={paying.paidAt} max={today} onChange={e => setPaying({ ...paying, paidAt: e.target.value })} className={`${inputClass} mt-1`} /></label>
+              <label className="block text-sm font-medium text-gray-700">Nota (opcional) <span className="font-normal text-gray-500">(referencia de la transferencia, forma de pago…)</span><input type="text" maxLength={300} value={paying.note} onChange={e => setPaying({ ...paying, note: e.target.value })} className={`${inputClass} mt-1`} /></label>
+              <div className="flex justify-end gap-2"><Button variant="outline" disabled={busy} onClick={() => setPaying(null)}>Cancelar</Button><Button type="submit" disabled={busy}><CheckCircle2 size={16} /> {busy ? 'Guardando…' : single ? 'Marcar como pagada' : `Marcar ${paying.accounts.length} como pagadas`}</Button></div>
+            </form>
+          </>
+        })()}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!unpaying} onOpenChange={open => { if (!open && !busy) setUnpaying(null) }}>
+      <DialogContent>
+        {unpaying && <>
+          <DialogHeader><DialogTitle>¿Deshacer el pago de la cuenta N.º {unpaying.numberLabel}?</DialogTitle><DialogDescription>Registrada como pagada{unpaying.paidAt ? ` el ${formatShortDateCO(unpaying.paidAt)}` : ''}{unpaying.paymentNote ? ` (${unpaying.paymentNote})` : ''}. Volverá a estar emitida y podrá editarse o anularse. El cambio queda en la auditoría.</DialogDescription></DialogHeader>
+          <div className="mt-4 flex gap-2"><Button disabled={busy} onClick={() => void unpayAccount(unpaying)}><Undo2 size={16} />{busy ? 'Guardando…' : 'Deshacer pago'}</Button><Button variant="outline" disabled={busy} onClick={() => setUnpaying(null)}>Cancelar</Button></div>
+        </>}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!bulkResults} onOpenChange={open => { if (!open) setBulkResults(null) }}>
+      <DialogContent>
+        {bulkResults && <>
+          <DialogHeader><DialogTitle>{bulkResults.title}</DialogTitle><DialogDescription>{bulkResults.response.done} procesada{bulkResults.response.done === 1 ? '' : 's'}{bulkResults.response.skipped ? ` · ${bulkResults.response.skipped} omitida${bulkResults.response.skipped === 1 ? '' : 's'}` : ''}{bulkResults.response.failed ? ` · ${bulkResults.response.failed} con error` : ''}.</DialogDescription></DialogHeader>
+          <ul className="max-h-72 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 text-sm">
+            {bulkResults.response.results.map(result => <li key={result.id} className="flex items-start justify-between gap-3 px-3 py-2">
+              <span><span className="font-semibold text-primary-600 tabular-nums">{result.number ? `N.º ${result.number}` : 'Cuenta'}</span> <span className="text-gray-700">{result.customer}</span><span className="block text-xs text-gray-500">{result.message}</span></span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${result.status === 'done' ? 'bg-green-100 text-green-800' : result.status === 'skipped' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}`}>{result.status === 'done' ? 'Lista' : result.status === 'skipped' ? 'Omitida' : 'Error'}</span>
+            </li>)}
+          </ul>
+          <div className="mt-4 flex justify-end"><Button onClick={() => setBulkResults(null)}>Cerrar</Button></div>
         </>}
       </DialogContent>
     </Dialog>

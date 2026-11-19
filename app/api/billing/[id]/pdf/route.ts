@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     await accountingUser()
-    const account = await prisma.billingAccount.findUnique({ where: { id: params.id }, select: { id: true, number: true, status: true, snapshot: true, pdf: true, customer: { select: { name: true, businessName: true, email: true } } } })
+    const account = await prisma.billingAccount.findUnique({ where: { id: params.id }, select: { id: true, number: true, status: true, snapshot: true, pdf: true, paidAt: true, customer: { select: { name: true, businessName: true, email: true } } } })
     if (!account) throw new ServiceError('Cuenta de cobro no encontrada', 404)
     const disposition = new URL(request.url).searchParams.get('disposition') === 'inline' ? 'inline' : 'attachment'
     const customerName = account.customer.businessName || account.customer.name || account.customer.email || ''

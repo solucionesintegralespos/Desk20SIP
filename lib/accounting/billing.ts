@@ -28,6 +28,27 @@ export const generateSchema = z.object({
   templateIds: z.array(z.string().min(1).max(100)).min(1, 'Selecciona al menos una plantilla').max(200),
   period: z.string().refine(isPeriod, 'Período inválido').optional(),
 })
+// Editing an issued account: concept and/or total (at least one). Number, customer and dates never change.
+export const editSchema = z.object({
+  concept: z.string().trim().min(1, 'Describe el producto o concepto').max(500).optional(),
+  total: money.optional(),
+}).refine(value => value.concept !== undefined || value.total !== undefined, 'Indica el concepto o el total a cambiar')
+const DATE = /^\d{4}-\d{2}-\d{2}$/
+export const paySchema = z.object({
+  // Bogotá calendar day of the payment; defaults to today. Never in the future.
+  paidAt: z.string().regex(DATE, 'Fecha de pago inválida').optional(),
+  note: z.string().trim().max(300).optional(),
+})
+export const bulkSchema = z.object({
+  action: z.enum(['pay', 'edit']),
+  ids: z.array(z.string().min(1).max(100)).min(1, 'Selecciona al menos una cuenta').max(200),
+  paidAt: z.string().regex(DATE, 'Fecha de pago inválida').optional(),
+  note: z.string().trim().max(300).optional(),
+  concept: z.string().trim().min(1, 'Describe el producto o concepto').max(500).optional(),
+  total: money.optional(),
+}).superRefine((value, ctx) => {
+  if (value.action === 'edit' && value.concept === undefined && value.total === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Indica el concepto o el total a cambiar' })
+})
 
 // ---------------------------------------------------------------------------
 // Numbering: one consecutive per customer, reserved inside the issuing transaction.
@@ -85,12 +106,12 @@ export const customerSnapshot = (customer: { id: string; name: string | null; em
 export const newPublicToken = () => randomBytes(32).toString('base64url')
 export const publicBillingUrl = (token: string) => { const base = publicBaseUrl(); return base ? new URL(`/api/public/billing/${encodeURIComponent(token)}`, base).toString() : `/api/public/billing/${encodeURIComponent(token)}` }
 
-export function billingDocument(account: Pick<BillingAccount, 'number' | 'status' | 'snapshot'>, logo?: BillingDocument['logo']): BillingDocument {
+export function billingDocument(account: Pick<BillingAccount, 'number' | 'status' | 'snapshot'> & { paidAt?: Date | null }, logo?: BillingDocument['logo']): BillingDocument {
   const snapshot = account.snapshot as unknown as BillingSnapshot
   return {
     company: { ...snapshot.company }, logo, number: formatBillingNumber(account.number), issuedAt: snapshot.issuedAt, dueAt: snapshot.dueAt,
     customer: snapshot.customer, concept: snapshot.concept, totalCents: snapshot.totalCents, amountInWords: snapshot.amountInWords,
-    period: snapshot.period, status: account.status,
+    period: snapshot.period, status: account.status, paidAt: account.paidAt ? account.paidAt.toISOString() : null,
   }
 }
 
@@ -168,12 +189,101 @@ export async function generateFromTemplates(templateIds: string[], period: strin
   return results
 }
 
-/** Stored PDF when available; older or trimmed rows are rendered again from their snapshot. */
-export async function billingPdfBuffer(account: Pick<BillingAccount, 'id' | 'number' | 'status' | 'snapshot' | 'pdf'>) {
-  if (account.pdf && account.status === 'ISSUED') return Buffer.from(account.pdf)
+/** Stored PDF when available (it is regenerated on edit and payment); voided, older or trimmed rows are rendered again from their snapshot. */
+export async function billingPdfBuffer(account: Pick<BillingAccount, 'id' | 'number' | 'status' | 'snapshot' | 'pdf'> & { paidAt?: Date | null }) {
+  if (account.pdf && account.status !== 'VOID') return Buffer.from(account.pdf)
   const snapshot = account.snapshot as unknown as BillingSnapshot
   const logo = await companyLogo(snapshot.logoUrl || '')
   return Buffer.from(await billingPdf(billingDocument(account, logo)))
+}
+
+// ---------------------------------------------------------------------------
+// Editing and payment (individually or in bulk). Paid accounts are frozen: they can neither be
+// edited nor voided until the payment is undone. Voided accounts cannot be edited or paid.
+// ---------------------------------------------------------------------------
+const statusLabel = (status: BillingAccount['status']) => status === 'PAID' ? 'pagada' : status === 'VOID' ? 'anulada' : 'emitida'
+const editableOrThrow = (account: Pick<BillingAccount, 'status'>) => {
+  if (account.status === 'PAID') throw new ServiceError('Una cuenta pagada no se puede editar. Deshaz el pago si necesitas corregirla.', 409)
+  if (account.status === 'VOID') throw new ServiceError('Una cuenta anulada no se puede editar', 409)
+}
+
+/** Bogotá calendar day (YYYY-MM-DD) as an instant at noon, so the printed date never shifts a day. */
+const dayInstant = (day: string) => new Date(`${day}T12:00:00-05:00`)
+export const todayInBogota = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+
+/** Changes concept and/or total of an issued account, refreshing its snapshot and stored PDF. The number and dates stay. */
+export async function editBillingAccount(id: string, changes: z.infer<typeof editSchema> & { totalCents?: number }, actorId: string) {
+  return prisma.$transaction(async tx => {
+    const account = await tx.billingAccount.findUnique({ where: { id } })
+    if (!account) throw new ServiceError('Cuenta de cobro no encontrada', 404)
+    editableOrThrow(account)
+    const snapshot = account.snapshot as unknown as BillingSnapshot
+    const concept = changes.concept !== undefined ? changes.concept.trim() : snapshot.concept
+    const totalCents = changes.totalCents !== undefined ? changes.totalCents : changes.total !== undefined ? Math.round(changes.total * 100) : snapshot.totalCents
+    const next: BillingSnapshot = { ...snapshot, concept, totalCents, amountInWords: amountInWords(totalCents) }
+    const logo = await companyLogo(snapshot.logoUrl || '')
+    const pdf = await billingPdf(billingDocument({ number: account.number, status: account.status, snapshot: next as unknown as Prisma.JsonValue }, logo))
+    const updated = await tx.billingAccount.update({ where: { id }, data: { concept, total: fromCentsDecimal(totalCents), snapshot: next as unknown as Prisma.InputJsonValue, pdf: Buffer.from(pdf) } })
+    await audit(tx, actorId, id, 'billing:edited')
+    return updated
+  }, { timeout: 20000 })
+}
+
+/** Marks an issued account as paid on a Bogotá day (today by default) with an optional note; the PDF gets the "PAGADA" stamp. */
+export async function payBillingAccount(id: string, payment: z.infer<typeof paySchema>, actorId: string) {
+  const day = payment.paidAt || todayInBogota()
+  if (day > todayInBogota()) throw new ServiceError('La fecha de pago no puede ser futura')
+  return prisma.$transaction(async tx => {
+    const account = await tx.billingAccount.findUnique({ where: { id } })
+    if (!account) throw new ServiceError('Cuenta de cobro no encontrada', 404)
+    if (account.status === 'PAID') throw new ServiceError('La cuenta ya está pagada', 409)
+    if (account.status === 'VOID') throw new ServiceError('Una cuenta anulada no se puede marcar como pagada', 409)
+    const paidAt = dayInstant(day)
+    const snapshot = account.snapshot as unknown as BillingSnapshot
+    const logo = await companyLogo(snapshot.logoUrl || '')
+    const pdf = await billingPdf(billingDocument({ number: account.number, status: 'PAID', snapshot: account.snapshot, paidAt }, logo))
+    const updated = await tx.billingAccount.update({ where: { id }, data: { status: 'PAID', paidAt, paymentNote: payment.note?.trim() || null, pdf: Buffer.from(pdf) } })
+    await audit(tx, actorId, id, 'billing:paid')
+    return updated
+  }, { timeout: 20000 })
+}
+
+/** Reverts a payment (back to issued) so the account can be corrected or voided. */
+export async function unpayBillingAccount(id: string, actorId: string) {
+  return prisma.$transaction(async tx => {
+    const account = await tx.billingAccount.findUnique({ where: { id } })
+    if (!account) throw new ServiceError('Cuenta de cobro no encontrada', 404)
+    if (account.status !== 'PAID') throw new ServiceError(`La cuenta no está pagada (está ${statusLabel(account.status)})`, 409)
+    const snapshot = account.snapshot as unknown as BillingSnapshot
+    const logo = await companyLogo(snapshot.logoUrl || '')
+    const pdf = await billingPdf(billingDocument({ number: account.number, status: 'ISSUED', snapshot: account.snapshot }, logo))
+    const updated = await tx.billingAccount.update({ where: { id }, data: { status: 'ISSUED', paidAt: null, paymentNote: null, pdf: Buffer.from(pdf) } })
+    await audit(tx, actorId, id, 'billing:unpaid')
+    return updated
+  }, { timeout: 20000 })
+}
+
+export interface BulkResult { id: string; number: string | null; customer: string; status: 'done' | 'skipped' | 'error'; message: string }
+
+/** Applies a payment or an edit to several accounts, one transaction each: a frozen or missing account never blocks the others. */
+export async function bulkBillingAction(input: z.infer<typeof bulkSchema>, actorId: string): Promise<BulkResult[]> {
+  const ids = Array.from(new Set(input.ids))
+  const accounts = await prisma.billingAccount.findMany({ where: { id: { in: ids } }, select: { id: true, number: true, customer: { select: { name: true, email: true, businessName: true } } } })
+  const results: BulkResult[] = []
+  for (const id of ids) {
+    const account = accounts.find(item => item.id === id)
+    if (!account) { results.push({ id, number: null, customer: '', status: 'error', message: 'La cuenta no existe' }); continue }
+    const base = { id, number: formatBillingNumber(account.number), customer: account.customer.businessName || account.customer.name || account.customer.email || 'Cliente' }
+    try {
+      if (input.action === 'pay') { await payBillingAccount(id, { paidAt: input.paidAt, note: input.note }, actorId); results.push({ ...base, status: 'done', message: 'Marcada como pagada' }) }
+      else { await editBillingAccount(id, { concept: input.concept, total: input.total }, actorId); results.push({ ...base, status: 'done', message: 'Cuenta actualizada' }) }
+    } catch (error) {
+      const frozen = error instanceof ServiceError && error.status === 409
+      results.push({ ...base, status: frozen ? 'skipped' : 'error', message: error instanceof ServiceError ? error.message : 'No se pudo procesar la cuenta' })
+      if (!(error instanceof ServiceError)) console.error(`[BILLING] bulk ${input.action} id=${id}`, error)
+    }
+  }
+  return results
 }
 
 export const billingFileName = (account: Pick<BillingAccount, 'number'>, customerName?: string) =>
@@ -190,6 +300,7 @@ export function serializeAccount(account: Omit<BillingAccount, 'pdf'> & { pdf?: 
     status: account.status, publicEnabled: account.publicEnabled, publicUrl: account.publicEnabled ? publicBillingUrl(account.publicToken) : null,
     issuedAt: account.issuedAt.toISOString(), dueAt: account.dueAt ? account.dueAt.toISOString() : null,
     voidedAt: account.voidedAt ? account.voidedAt.toISOString() : null, voidReason: account.voidReason, createdAt: account.createdAt.toISOString(),
+    paidAt: account.paidAt ? account.paidAt.toISOString() : null, paymentNote: account.paymentNote ?? null,
     customer: account.customer ? { id: account.customer.id, name: account.customer.name || account.customer.email || 'Cliente', businessName: account.customer.businessName, taxId: account.customer.taxId, email: account.customer.email } : { id: snapshot.customer.id, name: snapshot.customer.name, businessName: snapshot.customer.businessName, taxId: snapshot.customer.taxId, email: snapshot.customer.email },
     snapshotCustomer: snapshot.customer, amountInWords: snapshot.amountInWords,
   }

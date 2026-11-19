@@ -188,6 +188,7 @@ const quotePdf = require('../app/api/quotes/[id]/pdf/route.ts');
 const quoteEmail = require('../app/api/quotes/[id]/email/route.ts');
 const billing = require('../app/api/billing/route.ts');
 const billingById = require('../app/api/billing/[id]/route.ts');
+const billingBulk = require('../app/api/billing/bulk/route.ts');
 const billingLink = require('../app/api/billing/[id]/link/route.ts');
 const billingPdf = require('../app/api/billing/[id]/pdf/route.ts');
 const publicBilling = require('../app/api/public/billing/[token]/route.ts');
@@ -335,11 +336,57 @@ tables.user.push(
   const voided = await (await billingById.GET(json(`/api/billing/${account.id}`, 'GET'), ctx(account.id))).json(); assert.equal(voided.status, 'VOID'); assert.equal(voided.numberLabel, '01');
   const third = await (await billing.POST(json('/api/billing', 'POST', { customerId: 'customer-a', concept: 'Tras anular', total: 1 }))).json(); assert.equal(third.numberLabel, '03', 'voided numbers are not reused');
   const accounts = await (await billing.GET(json('/api/billing?customer=customer-a', 'GET'))).json(); assert.equal(accounts.total, 3);
+
+  // Editing: concept and/or total of an issued account; number and snapshot dates stay; PDF regenerated.
+  response = await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'edit', concept: 'Segunda corregida', total: 250000 }), ctx(second.id)); assert.equal(response.status, 200);
+  let editedAccount = await response.json(); assert.equal(editedAccount.concept, 'Segunda corregida'); assert.equal(editedAccount.totalCents, 25000000); assert.equal(editedAccount.numberLabel, '02'); assert.equal(editedAccount.amountInWords, 'Doscientos cincuenta mil pesos m/c');
+  let storedSecond = tables.billingAccount.find(a => a.id === second.id); assert.equal(storedSecond.snapshot.totalCents, 25000000); assert.equal(storedSecond.snapshot.concept, 'Segunda corregida'); assert.equal(storedSecond.snapshot.issuedAt, second.issuedAt, 'dates do not change'); assert.ok(Buffer.isBuffer(storedSecond.pdf) && storedSecond.pdf.length > 500, 'PDF regenerated');
+  editedAccount = await (await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'edit', total: 300000 }), ctx(second.id))).json(); assert.equal(editedAccount.concept, 'Segunda corregida', 'concept kept when only the total is sent'); assert.equal(editedAccount.totalCents, 30000000);
+  assert.equal((await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'edit' }), ctx(second.id))).status, 400, 'at least one field');
+  assert.equal((await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'edit', concept: '' }), ctx(second.id))).status, 400);
+  assert.equal((await billingById.PATCH(json(`/api/billing/${account.id}`, 'PATCH', { action: 'edit', concept: 'x' }), ctx(account.id))).status, 409, 'voided accounts are not editable');
+  // Payment: date (Bogotá day, never future) and note; paid accounts are frozen for edit and void until unpaid.
+  assert.equal((await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'pay', paidAt: '2099-01-01' }), ctx(second.id))).status, 400, 'no future payment dates');
+  assert.equal((await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'pay', paidAt: 'ayer' }), ctx(second.id))).status, 400);
+  response = await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'pay', paidAt: '2026-11-18', note: 'Transferencia 123' }), ctx(second.id)); assert.equal(response.status, 200);
+  let paidAccount = await response.json(); assert.equal(paidAccount.status, 'PAID'); assert.equal(paidAccount.paymentNote, 'Transferencia 123'); assert.equal(paidAccount.paidAt, '2026-11-18T17:00:00.000Z', 'noon in Bogotá keeps the printed day');
+  assert.equal((await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'pay' }), ctx(second.id))).status, 409, 'already paid');
+  assert.equal((await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'edit', concept: 'No' }), ctx(second.id))).status, 409, 'paid accounts cannot be edited');
+  assert.equal((await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'void' }), ctx(second.id))).status, 409, 'paid accounts cannot be voided');
+  assert.equal((await billingById.PATCH(json(`/api/billing/${account.id}`, 'PATCH', { action: 'pay' }), ctx(account.id))).status, 409, 'voided accounts cannot be paid');
+  assert.equal((await billingById.PATCH(json(`/api/billing/${third.id}`, 'PATCH', { action: 'unpay' }), ctx(third.id))).status, 409, 'only paid accounts can be unpaid');
+  assert.equal((await billingPdf.GET(json(`/api/billing/${second.id}/pdf`, 'GET'), ctx(second.id))).status, 200, 'paid PDF downloads');
+  // Status filter and totals: issued = pending, paid, voided, billed = issued + paid.
+  let listedAccounts = await (await billing.GET(json('/api/billing?customer=customer-a&status=PAID', 'GET'))).json(); assert.equal(listedAccounts.total, 1); assert.equal(listedAccounts.accounts[0].id, second.id);
+  listedAccounts = await (await billing.GET(json('/api/billing?customer=customer-a', 'GET'))).json();
+  assert.equal(listedAccounts.totals.paidCount, 1); assert.equal(listedAccounts.totals.paidCents, 30000000); assert.equal(listedAccounts.totals.issuedCount, 1); assert.equal(listedAccounts.totals.issuedCents, 100); assert.equal(listedAccounts.totals.billedCents, 30000100); assert.equal(listedAccounts.totals.voidCount, 1);
+  // Undo payment: back to issued and editable again.
+  response = await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'unpay' }), ctx(second.id)); assert.equal(response.status, 200);
+  paidAccount = await response.json(); assert.equal(paidAccount.status, 'ISSUED'); assert.equal(paidAccount.paidAt, null); assert.equal(paidAccount.paymentNote, null);
+  assert.equal((await billingById.PATCH(json(`/api/billing/${second.id}`, 'PATCH', { action: 'edit', concept: 'Editable otra vez' }), ctx(second.id))).status, 200);
+  // Bulk: each account on its own; paid/voided are skipped, missing ones are errors, the rest go through.
+  const fourth = await (await billing.POST(json('/api/billing', 'POST', { customerId: 'customer-b', concept: 'Masiva', total: 5000 }))).json();
+  assert.equal((await billingBulk.POST(json('/api/billing/bulk', 'POST', { action: 'edit', ids: [second.id] }))).status, 400, 'bulk edit needs a field');
+  assert.equal((await billingBulk.POST(json('/api/billing/bulk', 'POST', { action: 'pay', ids: [] }))).status, 400);
+  response = await billingBulk.POST(json('/api/billing/bulk', 'POST', { action: 'edit', ids: [second.id, fourth.id, account.id], total: 99000 })); assert.equal(response.status, 200);
+  let bulk = await response.json(); assert.equal(bulk.done, 2); assert.equal(bulk.skipped, 1); assert.equal(bulk.failed, 0);
+  assert.equal(tables.billingAccount.find(a => a.id === fourth.id).snapshot.totalCents, 9900000); assert.equal(tables.billingAccount.find(a => a.id === fourth.id).concept, 'Masiva', 'concept kept in bulk edit of the total');
+  assert.equal(tables.billingAccount.find(a => a.id === second.id).concept, 'Editable otra vez');
+  assert.equal(bulk.results.find(r => r.id === account.id).status, 'skipped'); assert.equal(bulk.results.find(r => r.id === fourth.id).number, '51');
+  response = await billingBulk.POST(json('/api/billing/bulk', 'POST', { action: 'pay', ids: [second.id, fourth.id, account.id, 'missing'], paidAt: '2026-11-19', note: 'Consignación' })); assert.equal(response.status, 200);
+  bulk = await response.json(); assert.equal(bulk.done, 2); assert.equal(bulk.skipped, 1); assert.equal(bulk.failed, 1);
+  assert.equal(bulk.results.find(r => r.id === 'missing').status, 'error');
+  assert.equal(tables.billingAccount.find(a => a.id === second.id).status, 'PAID'); assert.equal(tables.billingAccount.find(a => a.id === fourth.id).paymentNote, 'Consignación');
+  assert.equal(tables.billingAccount.find(a => a.id === account.id).status, 'VOID', 'voided stays voided');
+  assert.equal((await billingBulk.POST(json('/api/billing/bulk', 'POST', { action: 'edit', ids: [second.id], concept: 'Ya pagada' }))).status, 200);
+  assert.equal(tables.billingAccount.find(a => a.id === second.id).concept, 'Editable otra vez', 'bulk edit skips paid accounts');
+  await billingById.PATCH(json(`/api/billing/${fourth.id}`, 'PATCH', { action: 'unpay' }), ctx(fourth.id));
+  sessionUserId = 'agent'; assert.equal((await billingBulk.POST(json('/api/billing/bulk', 'POST', { action: 'pay', ids: [fourth.id] }))).status, 403, 'agents cannot pay'); sessionUserId = 'accounting';
   // Totals of the filtered list: voided accounts are counted apart and excluded from the issued amount.
-  assert.deepEqual(accounts.totals, { count: 3, issuedCount: 2, voidCount: 1, issuedCents: 200, voidCents: 17600000 });
+  assert.deepEqual(accounts.totals, { count: 3, issuedCount: 2, voidCount: 1, paidCount: 0, issuedCents: 200, voidCents: 17600000, paidCents: 0, billedCents: 200 });
   assert.equal(accounts.accounts[0].createdBy.name, 'Conta');
   assert.equal((await (await billing.GET(json('/api/billing?createdBy=admin', 'GET'))).json()).total, 0);
-  assert.equal((await (await billing.GET(json('/api/billing?createdBy=accounting', 'GET'))).json()).totals.count, 4);
+  assert.equal((await (await billing.GET(json('/api/billing?createdBy=accounting', 'GET'))).json()).totals.count, 5, 'includes the account created for the bulk tests');
   assert.ok(accounts.accounts.every(item => /^\d+$/.test(item.numberLabel)));
 
   // Recurring templates: no numbers consumed until generated, one per period, selectable generation with per-item results.
@@ -349,7 +396,7 @@ tables.user.push(
   assert.equal(tables.customerBillingSequence.find(s => s.customerId === 'customer-a').lastNumber, 3, 'templates do not consume numbers');
   response = await generate.POST(json('/api/billing/templates/generate', 'POST', { templateIds: [template.id, templateB.id], period: '2026-11' }));
   assert.equal(response.status, 200); let results = (await response.json()).results;
-  assert.deepEqual(results.map(r => [r.status, r.number]), [['generated', '04'], ['generated', '51']]);
+  assert.deepEqual(results.map(r => [r.status, r.number]), [['generated', '04'], ['generated', '52']]);
   results = (await (await generate.POST(json('/api/billing/templates/generate', 'POST', { templateIds: [template.id, templateB.id, 'missing'], period: '2026-11' }))).json()).results;
   assert.deepEqual(results.map(r => r.status), ['duplicate', 'duplicate', 'error']);
   results = (await (await generate.POST(json('/api/billing/templates/generate', 'POST', { templateIds: [template.id], period: '2026-10' }))).json()).results;
@@ -359,7 +406,7 @@ tables.user.push(
   assert.equal((await generate.POST(json('/api/billing/templates/generate', 'POST', { templateIds: [template.id], period: '2026-13' }))).status, 400);
   const listed = await (await templates.GET(json('/api/billing/templates?period=2026-11', 'GET'))).json();
   const row = listed.templates.find(item => item.id === template.id);
-  assert.equal(row.generated.numberLabel, '04'); assert.equal(listed.templates.find(item => item.id === templateB.id).generated.numberLabel, '51');
+  assert.equal(row.generated.numberLabel, '04'); assert.equal(listed.templates.find(item => item.id === templateB.id).generated.numberLabel, '52', 'customer B already used 51 in the bulk tests');
   assert.equal((await (await templates.GET(json('/api/billing/templates?period=2027-01', 'GET'))).json()).templates.find(item => item.id === template.id).generated, null);
   assert.equal(templates.DELETE, undefined);
 

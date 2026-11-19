@@ -416,6 +416,7 @@ enum BillingFrequency {
 enum BillingAccountStatus {
   ISSUED
   VOID
+  PAID
 }
 
 // Recurring billing configuration. It never consumes numbers: only generated accounts do.
@@ -459,6 +460,9 @@ model BillingAccount {
   dueAt         DateTime?
   voidedAt      DateTime?
   voidReason    String?
+  // Payment: set by Contabilidad individually or in bulk; paid accounts can no longer be edited.
+  paidAt        DateTime?
+  paymentNote   String?
   createdById   String?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt

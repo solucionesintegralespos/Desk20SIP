@@ -9,8 +9,10 @@ y Cuentas de cobro (ocasionales y recurrentes con plantillas mensuales y generac
 Cada cliente tiene su consecutivo propio de cuentas de cobro, solo numérico (`01`, `02`, … `10`), reservado
 en la transacción de emisión; los clientes registran razón social, NIT o cédula y número inicial. Cada
 cuenta conserva su snapshot y su PDF, tiene enlace público con token aleatorio (regenerable o desactivable)
-y puede anularse sin liberar su número. Requiere la migración `supabase/migrations/202611040001_accounting_quotes_billing.sql`
-(ver `docs/accounting-module.md`). Validación: `npm run test:accounting` y `npm run test:billing-numbering`.
+y puede anularse sin liberar su número. Las cuentas emitidas se pueden editar (concepto y total, con PDF regenerado)
+y marcar como pagadas con fecha y nota, una a una o en bloque; una cuenta pagada no se edita ni se anula hasta
+deshacer el pago. Requiere las migraciones `supabase/migrations/202611040001_accounting_quotes_billing.sql` y
+`202611190001_billing_paid.sql` (ver `docs/accounting-module.md`). Validación: `npm run test:accounting` y `npm run test:billing-numbering`.
 
 Inventario (todo el personal) controla existencias sobre el catálogo de productos: compras, entradas, bajas,
 conteos y kardex, más préstamos de equipos con salida (cliente, técnico, fotos) y entrada por orden, y un reporte de

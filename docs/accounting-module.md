@@ -30,6 +30,14 @@ Desde `202611100001_customer_email_notifications_default.sql` el valor por defec
 - Índices únicos: `(customerId, number)` y `(templateId, period)`. Las cuentas anuladas conservan su número y este no se reutiliza. Las plantillas recurrentes no consumen números hasta que generan una cuenta.
 - Se guarda como entero y se muestra solo con dígitos: `01`…`09`, `10`, `11`, …, `100`.
 
+## Edición y pago de cuentas de cobro
+
+- Estados: **Emitida** (pendiente de pago), **Pagada** y **Anulada** (`BillingAccountStatus`; migración `supabase/migrations/202611190001_billing_paid.sql` agrega `PAID`, `paidAt` y `paymentNote`).
+- **Editar** (`PATCH /api/billing/[id]` con `action: 'edit'`, `concept` y/o `total`): solo cuentas emitidas. Cambia concepto y total, actualiza el snapshot (valor en letras incluido) y regenera el PDF guardado; número, cliente y fechas no cambian.
+- **Marcar como pagada** (`action: 'pay'`, `paidAt` día de Bogotá, hoy por defecto y nunca futuro, `note` opcional): el PDF se regenera con el sello "PAGADA" y la fecha. Una cuenta pagada **no se puede editar ni anular**; `action: 'unpay'` deshace el pago (vuelve a emitida) y queda en auditoría (`billing:paid`, `billing:unpaid`, `billing:edited`).
+- **Masivo** (`POST /api/billing/bulk` con `action: 'pay' | 'edit'`, `ids` hasta 200 y los mismos campos): cada cuenta se procesa en su propia transacción; las pagadas o anuladas se reportan como omitidas y las inexistentes como error sin bloquear al resto. En la edición masiva los campos vacíos se conservan en cada cuenta.
+- En la lista, las casillas seleccionan cuentas emitidas de la página; la barra de selección ofrece "Marcar como pagadas" y "Editar en bloque". El filtro de estado y los totales incluyen Pagadas y "Total facturado" (emitidas + pagadas).
+
 ## Documentos
 
 - Las cotizaciones se generan con jsPDF (`lib/accounting/quote-pdf.ts`) con el membrete de las órdenes de servicio; las cuentas de cobro (`lib/accounting/billing-pdf.ts`) siguen el formato de referencia en blanco y negro. Una cotización puede emitirse a un cliente no registrado escribiendo su nombre (queda sin correo para envío). La vista previa del navegador, la descarga, el adjunto del correo y el enlace público usan la misma función.
@@ -38,5 +46,5 @@ Desde `202611100001_customer_email_notifications_default.sql` el valor por defec
 
 ## Pruebas
 
-- `npm run test:accounting` — helpers puros (centavos, redondeo del impuesto, formato de números, cifras en letras, períodos, roles) y rutas con base de datos simulada.
+- `npm run test:accounting` — helpers puros (centavos, redondeo del impuesto, formato de números, cifras en letras, períodos, roles) y rutas con base de datos simulada, incluidas edición, pago, deshacer pago y acciones masivas de cuentas de cobro.
 - `npm run test:billing-numbering` — numeración contra PostgreSQL real (`DATABASE_URL`): dos clientes con `01`, cliente con inicio 15, 12 emisiones simultáneas sin duplicados, secuencia compartida con las recurrentes, una cuenta por plantilla y período bajo concurrencia, snapshots inmutables, no reutilización tras anular, reversión en fallos. Crea y elimina sus propios datos de prueba.

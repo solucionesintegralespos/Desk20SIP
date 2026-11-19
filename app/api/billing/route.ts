@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1)
     const where: Prisma.BillingAccountWhereInput = {
       ...(customer ? { customerId: customer } : {}),
-      ...(status === 'ISSUED' || status === 'VOID' ? { status } : {}),
+      ...(status === 'ISSUED' || status === 'VOID' || status === 'PAID' ? { status } : {}),
       ...(createdBy ? { createdById: createdBy } : {}),
     }
     if (from || to) { const range = dailyRange(from, to); where.issuedAt = { gte: range.gte, lt: range.lt } }
@@ -38,15 +38,19 @@ export async function GET(request: Request) {
       ]
     }
     // Totals cover every account matching the filters, not only the current page.
-    const [accounts, total, issued, voided] = await Promise.all([
+    const [accounts, total, issued, voided, paid] = await Promise.all([
       prisma.billingAccount.findMany({ where, select: accountSelect, orderBy: [{ issuedAt: 'desc' }, { number: 'desc' }], skip: (page - 1) * PER_PAGE, take: PER_PAGE }),
       prisma.billingAccount.count({ where }),
       prisma.billingAccount.aggregate({ where: { ...where, status: 'ISSUED' }, _sum: { total: true }, _count: { _all: true } }),
       prisma.billingAccount.aggregate({ where: { ...where, status: 'VOID' }, _sum: { total: true }, _count: { _all: true } }),
+      prisma.billingAccount.aggregate({ where: { ...where, status: 'PAID' }, _sum: { total: true }, _count: { _all: true } }),
     ])
+    const sum = (value: unknown) => Math.round(Number(value ?? 0) * 100)
+    // "issued" = pending payment; "billed" = issued + paid (everything except voided).
     const totals = {
-      count: total, issuedCount: issued._count._all, voidCount: voided._count._all,
-      issuedCents: Math.round(Number(issued._sum.total ?? 0) * 100), voidCents: Math.round(Number(voided._sum.total ?? 0) * 100),
+      count: total, issuedCount: issued._count._all, voidCount: voided._count._all, paidCount: paid._count._all,
+      issuedCents: sum(issued._sum.total), voidCents: sum(voided._sum.total), paidCents: sum(paid._sum.total),
+      billedCents: sum(issued._sum.total) + sum(paid._sum.total),
     }
     const creators = await creatorsById(accounts.map(account => account.createdById))
     return Response.json({ accounts: accounts.map(account => ({ ...serializeAccount(account), createdBy: account.createdById ? creators[account.createdById] || null : null })), total, page, perPage: PER_PAGE, totals })

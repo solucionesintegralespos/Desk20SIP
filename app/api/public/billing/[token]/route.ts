@@ -10,7 +10,7 @@ export async function GET(_request: Request, { params }: { params: { token: stri
   const invalid = () => Response.json({ error: 'El enlace no es válido o fue desactivado' }, { status: 404, headers: { 'X-Robots-Tag': 'noindex' } })
   if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return invalid()
   try {
-    const account = await prisma.billingAccount.findUnique({ where: { publicToken: token }, select: { id: true, number: true, status: true, snapshot: true, pdf: true, publicEnabled: true } })
+    const account = await prisma.billingAccount.findUnique({ where: { publicToken: token }, select: { id: true, number: true, status: true, snapshot: true, pdf: true, paidAt: true, publicEnabled: true } })
     if (!account || !account.publicEnabled) return invalid()
     return pdfResponse(await billingPdfBuffer(account), billingFileName(account), 'inline')
   } catch (error) {

@@ -10,7 +10,7 @@ import { api, type CustomerOption } from './api'
 import type { SerializedTemplate, GenerateResult } from '@/lib/accounting/billing'
 import { currentPeriod, periodLabel, formatMoney, formatShortDateCO, toCents } from '@/lib/accounting/format'
 
-type Template = Omit<SerializedTemplate, 'accounts'> & { generated: { id: string; numberLabel: string; issuedAt: string; status: 'ISSUED' | 'VOID' } | null }
+type Template = Omit<SerializedTemplate, 'accounts'> & { generated: { id: string; numberLabel: string; issuedAt: string; status: 'ISSUED' | 'VOID' | 'PAID' } | null }
 type ListResponse = { period: string; templates: Template[] }
 type Product = { id: string; name: string; description: string | null; price: number; active: boolean }
 type Draft = { id?: string; customerId: string; productId: string; concept: string; totalCents: number | null; active: boolean; accountsCount: number }
@@ -159,7 +159,7 @@ export default function BillingTemplates() {
               <td className="whitespace-nowrap px-4 py-3 text-sm">Mensual</td>
               <td className="whitespace-nowrap px-4 py-3 text-sm">
                 {!t.active ? <span className="inline-flex rounded-full bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-600">Inactiva</span>
-                  : t.generated ? <span className="inline-flex flex-col gap-0.5"><span className="inline-flex w-fit items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800"><CheckCircle2 size={12} /> Generada N.º {t.generated.numberLabel}{t.generated.status === 'VOID' && ' (anulada)'}</span><a href={`/api/billing/${t.generated.id}/pdf`} className="text-xs text-primary-600 hover:underline">el {formatShortDateCO(t.generated.issuedAt)} · PDF</a></span>
+                  : t.generated ? <span className="inline-flex flex-col gap-0.5"><span className="inline-flex w-fit items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800"><CheckCircle2 size={12} /> Generada N.º {t.generated.numberLabel}{t.generated.status === 'VOID' ? ' (anulada)' : t.generated.status === 'PAID' ? ' (pagada)' : ''}</span><a href={`/api/billing/${t.generated.id}/pdf`} className="text-xs text-primary-600 hover:underline">el {formatShortDateCO(t.generated.issuedAt)} · PDF</a></span>
                   : <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Pendiente</span>}
               </td>
               <td className="px-4 py-3"><div className="flex flex-wrap gap-1">
@@ -243,7 +243,7 @@ export default function BillingTemplates() {
           {!history.accounts?.length ? <p className="text-sm text-gray-500">Esta plantilla aún no ha generado cuentas.</p>
             : <div className="max-h-80 overflow-y-auto rounded-lg border border-gray-200"><table className="w-full text-sm">
               <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500"><tr><th className="px-3 py-2">N.º</th><th className="px-3 py-2">Período</th><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2"></th></tr></thead>
-              <tbody className="divide-y divide-gray-100">{history.accounts.map(a => <tr key={a.id}><td className="px-3 py-2 font-semibold text-primary-600 tabular-nums">{a.numberLabel}</td><td className="px-3 py-2">{a.period ? periodLabel(a.period) : '—'}</td><td className="px-3 py-2">{formatShortDateCO(a.issuedAt)}</td><td className="px-3 py-2">{a.status === 'VOID' ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">Anulada</span> : <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">Emitida</span>}</td><td className="px-3 py-2"><a href={`/api/billing/${a.id}/pdf`} className="inline-flex items-center gap-1 text-xs text-primary-600 hover:underline"><Download size={14} /> PDF</a></td></tr>)}</tbody>
+              <tbody className="divide-y divide-gray-100">{history.accounts.map(a => <tr key={a.id}><td className="px-3 py-2 font-semibold text-primary-600 tabular-nums">{a.numberLabel}</td><td className="px-3 py-2">{a.period ? periodLabel(a.period) : '—'}</td><td className="px-3 py-2">{formatShortDateCO(a.issuedAt)}</td><td className="px-3 py-2">{a.status === 'VOID' ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">Anulada</span> : a.status === 'PAID' ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">Pagada</span> : <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800">Emitida</span>}</td><td className="px-3 py-2"><a href={`/api/billing/${a.id}/pdf`} className="inline-flex items-center gap-1 text-xs text-primary-600 hover:underline"><Download size={14} /> PDF</a></td></tr>)}</tbody>
             </table></div>}
         </>}
       </DialogContent>

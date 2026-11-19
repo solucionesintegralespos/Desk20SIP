@@ -19,7 +19,9 @@ export interface BillingDocument {
   totalCents: number
   amountInWords: string
   period?: string | null
-  status: 'ISSUED' | 'VOID'
+  status: 'ISSUED' | 'VOID' | 'PAID'
+  /** Payment date, printed as a stamp on paid accounts. */
+  paidAt?: string | null
 }
 
 const BLACK: [number, number, number] = [0, 0, 0]
@@ -115,6 +117,12 @@ export async function billingPdf(data: BillingDocument) {
     if (data.status === 'VOID') {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(48); doc.setTextColor(170, 170, 170)
       doc.text('ANULADA', width / 2, height / 2, { align: 'center', angle: 30 })
+    } else if (data.status === 'PAID') {
+      // Discreet stamp at the top right so the document stays legible as a receipt.
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...GRAY)
+      doc.setDrawColor(...GRAY); doc.setLineWidth(0.6); doc.roundedRect(width - MARGIN - 46, 12, 46, data.paidAt ? 13 : 9, 1.5, 1.5)
+      doc.text('PAGADA', width - MARGIN - 23, 18.5, { align: 'center' })
+      if (data.paidAt) { doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.text(bogotaDate(data.paidAt), width - MARGIN - 23, 23, { align: 'center' }) }
     }
   }
   return pdfBytes(doc)
